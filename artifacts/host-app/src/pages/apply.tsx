@@ -13,7 +13,7 @@ const applicationInputSchema = z.object({
   profession: z.string().min(2, "Required"),
   educationalBackground: z.string().optional(),
   artistStatement: z.string().min(50, "Minimum 50 characters."),
-  skillTags: z.string().min(1, "Required"),
+  skillTags: z.string().default(""),
 });
 
 type ApplicationInput = z.infer<typeof applicationInputSchema>;
