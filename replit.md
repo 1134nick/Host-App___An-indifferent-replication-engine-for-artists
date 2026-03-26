@@ -17,6 +17,7 @@ pnpm workspace monorepo using TypeScript. This is Host App — a members-only pl
 - **Build**: esbuild (CJS bundle)
 - **Auth**: express-session + bcryptjs + connect-pg-simple
 - **Frontend**: React + Vite + Tailwind CSS + shadcn/ui + framer-motion
+- **Design system**: Woven textile minimalism — black/cream/white palette, IBM Plex Mono monospace, anaglyphic blue/red depth text, geometric weave patterns
 
 ## Structure
 

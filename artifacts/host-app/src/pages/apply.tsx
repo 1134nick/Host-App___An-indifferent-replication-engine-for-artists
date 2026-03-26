@@ -5,15 +5,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { useSubmitApplication, useGetMyApplication } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { FileText, ChevronRight } from "lucide-react";
 import { useEffect } from "react";
 
 const applicationSchema = z.object({
-  age: z.coerce.number().min(18, "Subject must be adult"),
-  nationality: z.string().min(2, "Required field"),
-  profession: z.string().min(2, "Required field"),
+  age: z.coerce.number().min(18, "Must be 18+"),
+  nationality: z.string().min(2, "Required"),
+  profession: z.string().min(2, "Required"),
   educationalBackground: z.string().optional(),
-  artistStatement: z.string().min(50, "Statement insufficient. Expand logic."),
+  artistStatement: z.string().min(50, "Minimum 50 characters."),
   skillTags: z.string().transform(str => str.split(",").map(s => s.trim()).filter(Boolean))
 });
 
@@ -31,7 +30,7 @@ export default function Apply() {
   }, [isAuthenticated, authLoading, existingApp, setLocation]);
 
   const form = useForm<ApplicationForm>({
-    resolver: zodResolver(applicationSchema as any), // Type workaround for transform
+    resolver: zodResolver(applicationSchema as any),
     defaultValues: {
       age: 18,
       nationality: "",
@@ -55,20 +54,19 @@ export default function Apply() {
 
   return (
     <div className="flex-1 max-w-3xl mx-auto w-full px-6 py-12">
-      <div className="mb-12 border-b border-border pb-8">
-        <FileText className="w-8 h-8 text-primary mb-6" strokeWidth={1} />
-        <h1 className="text-3xl font-serif tracking-[0.2em] uppercase">Dossier Submission</h1>
-        <p className="text-muted-foreground mt-4 text-sm tracking-widest uppercase border-l-2 border-primary pl-4">
-          Data gathered here determines architectural placement. <br/>
-          Be precise. Be devoid of pretense.
+      <div className="mb-12 pb-8">
+        <h1 className="depth-text text-xl tracking-[0.2em] uppercase mb-4">Dossier</h1>
+        <div className="weave-divider w-full mb-4" />
+        <p className="text-muted-foreground text-xs tracking-widest lowercase">
+          be precise. be devoid of pretense.
         </p>
       </div>
 
-      <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-12">
+      <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-10">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-2">
-            <label className="text-xs uppercase tracking-widest text-muted-foreground">Chronological Age</label>
-            <input 
+            <label className="text-xs uppercase tracking-widest text-muted-foreground">Age</label>
+            <input
               type="number"
               {...form.register("age")}
               className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
@@ -77,30 +75,28 @@ export default function Apply() {
           </div>
 
           <div className="space-y-2">
-            <label className="text-xs uppercase tracking-widest text-muted-foreground">Origin Node (Nationality)</label>
-            <input 
+            <label className="text-xs uppercase tracking-widest text-muted-foreground">Nationality</label>
+            <input
               type="text"
               {...form.register("nationality")}
               className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
-              placeholder="e.g. DE, US, JP"
             />
             {form.formState.errors.nationality && <p className="text-xs text-destructive mt-1">{form.formState.errors.nationality.message}</p>}
           </div>
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs uppercase tracking-widest text-muted-foreground">Current Designation (Profession)</label>
-          <input 
+          <label className="text-xs uppercase tracking-widest text-muted-foreground">Profession</label>
+          <input
             type="text"
             {...form.register("profession")}
             className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
-            placeholder="e.g. Sculptor, Analyst, Architect"
           />
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs uppercase tracking-widest text-muted-foreground">Conditioning (Education - Optional)</label>
-          <input 
+          <label className="text-xs uppercase tracking-widest text-muted-foreground">Education (optional)</label>
+          <input
             type="text"
             {...form.register("educationalBackground")}
             className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
@@ -108,37 +104,34 @@ export default function Apply() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs uppercase tracking-widest text-muted-foreground">Capabilities (Comma separated)</label>
-          <input 
+          <label className="text-xs uppercase tracking-widest text-muted-foreground">Skills (comma separated)</label>
+          <input
             type="text"
             {...form.register("skillTags")}
             className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
-            placeholder="typography, sound design, logistics"
           />
         </div>
 
         <div className="space-y-2">
           <label className="text-xs uppercase tracking-widest text-muted-foreground flex items-center justify-between">
-            <span>Primary Thesis (Artist Statement)</span>
-            <span className="text-border">MIN 50 CHARS</span>
+            <span>Artist statement</span>
+            <span className="text-border text-[10px]">MIN 50 CHARS</span>
           </label>
-          <textarea 
+          <textarea
             {...form.register("artistStatement")}
             rows={6}
-            className="w-full bg-card border border-border p-4 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all font-mono resize-none"
-            placeholder="State your operational intent and theoretical framework..."
+            className="w-full bg-card border border-border p-4 text-sm focus:outline-none focus:border-primary transition-all font-mono resize-none"
           />
           {form.formState.errors.artistStatement && <p className="text-xs text-destructive mt-1">{form.formState.errors.artistStatement.message}</p>}
         </div>
 
-        <div className="pt-8 flex justify-end">
-          <button 
+        <div className="pt-6 flex justify-end">
+          <button
             type="submit"
             disabled={submitApp.isPending}
-            className="flex items-center gap-3 bg-foreground text-background hover:bg-primary px-8 py-4 text-xs tracking-[0.2em] uppercase transition-colors disabled:opacity-50 font-bold"
+            className="border border-foreground text-foreground hover:bg-foreground hover:text-background px-8 py-3 text-xs tracking-[0.2em] uppercase transition-colors disabled:opacity-50 font-medium"
           >
-            {submitApp.isPending ? "Transmitting..." : "Commit Dossier"}
-            <ChevronRight className="w-4 h-4" />
+            {submitApp.isPending ? "..." : "Submit"}
           </button>
         </div>
       </form>
