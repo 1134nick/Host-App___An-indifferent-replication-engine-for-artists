@@ -132,9 +132,11 @@ export default function Room() {
       const ext = mediaType === "image" ? "jpg" : "webm";
       const mime = mediaBlob.type || (mediaType === "image" ? "image/jpeg" : "audio/webm");
       const urlData = await requestUploadUrlMutation.mutateAsync({
-        name: `capture.${ext}`,
-        size: mediaBlob.size,
-        contentType: mime,
+        data: {
+          name: `capture.${ext}`,
+          size: mediaBlob.size,
+          contentType: mime,
+        },
       });
 
       const uploadRes = await fetch(urlData.uploadURL, {

@@ -10,13 +10,6 @@ export default function Landing() {
         transition={{ duration: 2, ease: "easeOut" }}
         className="relative z-10 max-w-2xl mx-auto px-8 text-center flex flex-col items-center gap-12"
       >
-        <img
-          src={`${import.meta.env.BASE_URL}images/basket-weave.png`}
-          alt=""
-          className="w-40 h-40 object-cover opacity-60 mix-blend-screen"
-          style={{ filter: "grayscale(1) contrast(1.2)" }}
-        />
-
         <h1 className="depth-text-lg uppercase tracking-[0.3em]">
           Host
         </h1>
