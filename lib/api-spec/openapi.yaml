@@ -1,22 +1,37 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Host App API - Members-only platform for artists
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: applications
+    description: Application submissions
+  - name: cohorts
+    description: Cohort management
+  - name: roles
+    description: Role assignments
+  - name: rooms
+    description: Messaging rooms
+  - name: messages
+    description: Room messages
+  - name: instructions
+    description: Admin instructions
+  - name: admin
+    description: Admin operations
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +39,380 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /applications:
+    post:
+      operationId: submitApplication
+      tags: [applications]
+      summary: Submit an application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationRequest"
+      responses:
+        "201":
+          description: Application submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "400":
+          description: Validation error or already applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: getMyApplication
+      tags: [applications]
+      summary: Get current user's application
+      responses:
+        "200":
+          description: Application details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "404":
+          description: No application found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /applications/all:
+    get:
+      operationId: getAllApplications
+      tags: [applications]
+      summary: Get all applications (admin only)
+      responses:
+        "200":
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApplicationWithUser"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /cohorts:
+    get:
+      operationId: getCohorts
+      tags: [cohorts]
+      summary: Get all cohorts (admin)
+      responses:
+        "200":
+          description: List of cohorts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Cohort"
+  
+  /cohorts/current:
+    get:
+      operationId: getCurrentCohortStatus
+      tags: [cohorts]
+      summary: Get the active open cohort status
+      responses:
+        "200":
+          description: Current cohort
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CohortStatus"
+
+  /cohorts/{cohortId}/process:
+    post:
+      operationId: processCohort
+      tags: [cohorts]
+      summary: Process cohort - assign roles when 100 applications reached (admin)
+      parameters:
+        - name: cohortId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cohort processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CohortProcessResult"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Cohort not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /my-role:
+    get:
+      operationId: getMyRole
+      tags: [roles]
+      summary: Get current user's role in their cohort
+      responses:
+        "200":
+          description: User role details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRole"
+        "404":
+          description: No role assigned yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /rooms:
+    get:
+      operationId: getMyRooms
+      tags: [rooms]
+      summary: Get rooms accessible to current user
+      responses:
+        "200":
+          description: List of accessible rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Room"
+
+  /rooms/{roomId}/messages:
+    get:
+      operationId: getRoomMessages
+      tags: [messages]
+      summary: Get messages in a room
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Messages in room
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+        "403":
+          description: No access to this room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      summary: Send a message to a room
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "403":
+          description: No access to this room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /instructions:
+    get:
+      operationId: getMyInstructions
+      tags: [instructions]
+      summary: Get instructions for current user
+      responses:
+        "200":
+          description: Instructions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Instruction"
+    post:
+      operationId: createInstruction
+      tags: [instructions]
+      summary: Create an instruction (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInstructionRequest"
+      responses:
+        "201":
+          description: Instruction created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Instruction"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      summary: Get admin dashboard statistics
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +423,379 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+        - message
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        displayName:
+          type: string
+        pseudonym:
+          type: string
+          nullable: true
+        isAdmin:
+          type: boolean
+        status:
+          type: string
+          enum: [pending, active, suspended]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - email
+        - displayName
+        - isAdmin
+        - status
+        - createdAt
+
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        displayName:
+          type: string
+          minLength: 2
+      required:
+        - email
+        - password
+        - displayName
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    ApplicationRequest:
+      type: object
+      properties:
+        age:
+          type: integer
+          minimum: 18
+        nationality:
+          type: string
+        profession:
+          type: string
+        educationalBackground:
+          type: string
+        personalityAnswers:
+          type: object
+          additionalProperties: true
+        skillTags:
+          type: array
+          items:
+            type: string
+        artistStatement:
+          type: string
+      required:
+        - age
+        - nationality
+        - profession
+        - artistStatement
+
+    Application:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        cohortId:
+          type: integer
+          nullable: true
+        applicationOrder:
+          type: integer
+          nullable: true
+        age:
+          type: integer
+        nationality:
+          type: string
+        profession:
+          type: string
+        educationalBackground:
+          type: string
+          nullable: true
+        skillTags:
+          type: array
+          items:
+            type: string
+        artistStatement:
+          type: string
+        status:
+          type: string
+          enum: [submitted, processing, assigned]
+        submittedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - age
+        - nationality
+        - profession
+        - artistStatement
+        - status
+        - submittedAt
+
+    ApplicationWithUser:
+      allOf:
+        - $ref: "#/components/schemas/Application"
+        - type: object
+          properties:
+            userDisplayName:
+              type: string
+            userEmail:
+              type: string
+          required:
+            - userDisplayName
+            - userEmail
+
+    Cohort:
+      type: object
+      properties:
+        id:
+          type: integer
+        cohortNumber:
+          type: integer
+        applicantCount:
+          type: integer
+        status:
+          type: string
+          enum: [open, processing, active, closed]
+        createdAt:
+          type: string
+          format: date-time
+        lockedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - cohortNumber
+        - applicantCount
+        - status
+        - createdAt
+
+    CohortStatus:
+      type: object
+      properties:
+        cohortNumber:
+          type: integer
+        applicantCount:
+          type: integer
+        spotsRemaining:
+          type: integer
+        status:
+          type: string
+      required:
+        - cohortNumber
+        - applicantCount
+        - spotsRemaining
+        - status
+
+    CohortProcessResult:
+      type: object
+      properties:
+        cohortId:
+          type: integer
+        rolesAssigned:
+          type: integer
+        teamACount:
+          type: integer
+        teamBCount:
+          type: integer
+        leaderAssigned:
+          type: boolean
+        peripheralCount:
+          type: integer
+      required:
+        - cohortId
+        - rolesAssigned
+        - teamACount
+        - teamBCount
+        - leaderAssigned
+        - peripheralCount
+
+    UserRole:
+      type: object
+      properties:
+        roleType:
+          type: string
+          enum: [team_member, leader, peripheral]
+        teamName:
+          type: string
+          nullable: true
+        isHiddenRole:
+          type: boolean
+        cohortNumber:
+          type: integer
+        statusLabel:
+          type: string
+        assignedAt:
+          type: string
+          format: date-time
+      required:
+        - roleType
+        - isHiddenRole
+        - cohortNumber
+        - statusLabel
+        - assignedAt
+
+    Room:
+      type: object
+      properties:
+        id:
+          type: integer
+        cohortId:
+          type: integer
+        roomType:
+          type: string
+          enum: [team_a, team_b, leader, peripheral, admin_broadcast]
+        visibilityRule:
+          type: string
+        memberCount:
+          type: integer
+      required:
+        - id
+        - cohortId
+        - roomType
+        - visibilityRule
+        - memberCount
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        roomId:
+          type: integer
+        userId:
+          type: integer
+          nullable: true
+        content:
+          type: string
+        isSystemMessage:
+          type: boolean
+        maskedSenderLabel:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - roomId
+        - content
+        - isSystemMessage
+        - createdAt
+
+    SendMessageRequest:
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 1
+      required:
+        - content
+
+    Instruction:
+      type: object
+      properties:
+        id:
+          type: integer
+        cohortId:
+          type: integer
+        targetRole:
+          type: string
+          nullable: true
+        content:
+          type: string
+        releaseAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - cohortId
+        - content
+        - createdAt
+
+    CreateInstructionRequest:
+      type: object
+      properties:
+        cohortId:
+          type: integer
+        targetRole:
+          type: string
+          nullable: true
+        targetUserId:
+          type: integer
+          nullable: true
+        content:
+          type: string
+        releaseAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - cohortId
+        - content
+
+    AdminStats:
+      type: object
+      properties:
+        totalUsers:
+          type: integer
+        totalApplications:
+          type: integer
+        totalCohorts:
+          type: integer
+        activeCohorts:
+          type: integer
+        openCohortApplicants:
+          type: integer
+        spotsToFill:
+          type: integer
+      required:
+        - totalUsers
+        - totalApplications
+        - totalCohorts
+        - activeCohorts
+        - openCohortApplicants
+        - spotsToFill

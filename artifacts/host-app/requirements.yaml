@@ -1,0 +1,18 @@
+packages:
+  "framer-motion": "Smooth, deliberate animations for a cryptic, secretive aesthetic"
+  "react-hook-form": "Form state management"
+  "@hookform/resolvers": "Zod validation for forms"
+  "zod": "Schema validation"
+  "date-fns": "Date formatting for data readouts"
+  "clsx": "Utility for constructing className strings"
+  "tailwind-merge": "Utility for merging tailwind classes"
+
+images:
+  - path: "artifacts/host-app/public/images/monolith-bg.png"
+    description: "Extremely dark, cryptic, brutalist geometric monolith structure fading into black shadows, subtle glowing amber volumetric light, grainy texture, highly minimal and secretive atmosphere"
+    aspect_ratio: "16:9"
+
+notes:
+  - Hooks are imported from @workspace/api-client-react
+  - React Router uses wouter
+  - The aesthetic is strictly dark, minimal, cryptic, and institutional. UI uses monospace fonts and stark typography.

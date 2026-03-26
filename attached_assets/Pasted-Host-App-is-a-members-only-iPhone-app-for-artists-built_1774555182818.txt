@@ -1,0 +1,362 @@
+Host App is a members-only iPhone app for artists built around hidden organizational logic.
+
+Users apply through an intake process that appears evaluative, but actual selection is determined by application order within rolling groups of 100 applicants.
+
+Within each 100-person cycle:
+	•	applicants are indexed from 1 to 100 by order of submission
+	•	prime-numbered positions are selected
+	•	two teams are formed from those selected users
+	•	one hidden leader is assigned
+	•	non-selected users remain present in a restricted anonymous relationship to the leader
+	•	the system orchestrates private, partial, and asymmetrical communication
+	•	mystery is not a bug, it is part of the operating medium
+
+That’s potent.
+
+First design move: turn the concept into a clean product definition
+
+Here is the sharper version of your concept in app-language.
+
+Product definition
+
+Host App: An indifferent replication engine for artists
+
+A private, mobile-first social system where artists are admitted into structured cohorts through hidden mathematical rules, then placed into limited-access communication architectures that shape collaboration, secrecy, hierarchy, and emergence.
+
+The app does not optimize for transparency, popularity, or efficiency.
+
+It optimizes for:
+	•	conditional connection
+	•	hidden structure
+	•	asymmetric knowledge
+	•	ritualized participation
+	•	evolving group identity
+	•	experimental social behavior among artists
+
+Important structural correction
+
+There is a math mismatch in your current description.
+
+You wrote:
+	•	first 100 people
+	•	first 10 prime numbers between 1 and 100 pass first step
+	•	then later you define two teams of 12 plus a hidden leader, which uses 25 selected users
+
+Those are two different systems.
+
+Prime numbers from 1 to 100
+
+There are 25 primes between 1 and 100:
+
+2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97
+
+So the clean interpretation is:
+	•	in each block of 100 applicants
+	•	the 25 prime positions are selected
+	•	the first 12 primes become Team A
+	•	the next 12 primes become Team B
+	•	the last prime, 97, becomes the hidden leader
+
+That works beautifully.
+
+Cohort logic
+
+Applicant cycle
+
+Each 100 submitted applications creates one independent cohort.
+
+Selection rule
+
+Selected users are determined by their application position in the cohort.
+
+Assignment rule
+	•	Team A: positions 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37
+	•	Team B: positions 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89
+	•	Hidden Leader: position 97
+
+Non-selected users
+
+All non-prime applicants in the 100-person cohort remain in the system, but with restricted permissions and ambiguous status.
+
+This is crucial. They are not simply rejected. They become part of the field surrounding the structure.
+
+Core experience model
+
+Here’s the app as a permissions machine.
+
+Role types
+	1.	Applicant
+Has submitted profile and awaits status.
+	2.	Selected Team Member
+Placed into Team A or Team B.
+Can see only what their role permits.
+	3.	Hidden Leader
+Appears as a normal member outwardly, but receives extra permissions and instructions.
+	4.	Peripheral User
+Not selected for team placement, but may still have limited anonymous access to the leader or system prompts.
+	5.	Admin / Curator
+External operator controlling prompts, cohort state, database rules, and observation tools.
+
+Experience principles
+
+These should become your design commandments.
+
+1. Partial knowledge
+
+No user fully understands the system.
+
+2. Uneven visibility
+
+Different users see different truths.
+
+3. Structured uncertainty
+
+The app should feel deliberate, not random.
+
+4. Ritual over explanation
+
+Instructions are given as events, fragments, briefings, and permissions, not exhaustive onboarding.
+
+5. Cohorts evolve differently
+
+Each 100-user cycle becomes a separate organism.
+
+Privacy and ethics note
+
+Because you mentioned collecting age, nationality, educational background, profession, personality, and skill data:
+
+You can build that intake layer, but from a real app design standpoint, this needs guardrails.
+
+What matters
+
+If those fields are collected but not actually used for acceptance, you should be careful about:
+	•	user consent
+	•	clear data policy
+	•	storage minimization
+	•	whether sensitive personal data is actually necessary
+	•	whether the “mystery” design crosses into deceptive handling of personal information
+
+For the concept, it works.
+For a real shipped product, we should design a version that preserves the artistic structure without creating legal shrapnel.
+
+Best practice would be:
+	•	only collect what is genuinely needed
+	•	make some fields optional
+	•	separate identity data from public/app-facing identity
+	•	encrypt personal profile data
+	•	store cohort logic separately from profile data
+	•	define exactly what admins can and cannot see
+
+Recommended technical architecture for version 1
+
+Since you want iPhone with centralized cross-platform backend:
+
+Frontend
+	•	SwiftUI for iPhone app
+	•	later possible web admin panel
+
+Backend
+	•	PostgreSQL database
+	•	Supabase is a strong fit for early build
+	•	auth
+	•	postgres
+	•	row-level security
+	•	real-time features
+	•	storage
+	•	serverless functions
+
+Admin logic
+	•	server-side cohort assignment function
+	•	hidden role assignment engine
+	•	invitation / briefing / room access control
+
+Messaging / rooms
+
+For v1, build lightweight structured rooms rather than full free chat chaos.
+
+You likely want:
+	•	team room
+	•	leader private room
+	•	leader-to-peripheral inbox or masked relay
+	•	admin prompt channel
+	•	scheduled briefing drops
+
+Initial data model
+
+Here’s the bones of the database.
+
+users
+	•	id
+	•	email / auth id
+	•	display_name
+	•	pseudonym
+	•	created_at
+	•	status
+
+applications
+	•	id
+	•	user_id
+	•	cohort_id
+	•	application_order
+	•	age
+	•	nationality
+	•	profession
+	•	educational_background
+	•	personality_answers
+	•	skill_tags
+	•	submitted_at
+
+cohorts
+	•	id
+	•	cohort_number
+	•	applicant_count
+	•	status
+	•	created_at
+	•	locked_at
+
+cohort_roles
+	•	id
+	•	cohort_id
+	•	user_id
+	•	role_type
+	•	team_name
+	•	is_hidden_role
+	•	assigned_at
+
+rooms
+	•	id
+	•	cohort_id
+	•	room_type
+	•	visibility_rule
+
+room_members
+	•	id
+	•	room_id
+	•	user_id
+	•	joined_at
+
+messages
+	•	id
+	•	room_id
+	•	user_id
+	•	content
+	•	created_at
+	•	is_system_message
+	•	masked_sender_label
+
+instructions
+	•	id
+	•	cohort_id
+	•	target_role
+	•	target_user_id
+	•	content
+	•	release_at
+	•	created_by_admin
+
+access_rules
+	•	id
+	•	cohort_id
+	•	rule_name
+	•	rule_payload
+
+Functional system rules
+
+These are the first concrete product rules.
+
+Rule 1: Cohort formation
+
+Every 100 applications creates one cohort.
+
+Rule 2: Immutable order
+
+Application order is fixed once written.
+
+Rule 3: Prime-based selection
+
+Prime indices within the cohort define selected users.
+
+Rule 4: Hidden leader
+
+Position 97 is flagged as leader privately.
+
+Rule 5: Restricted disclosure
+
+Users are never told the full selection rule.
+
+Rule 6: Room permissions
+
+Access depends on role, not identity.
+
+Rule 7: Cohort isolation
+
+Users in one cohort cannot see another cohort unless explicitly allowed later.
+
+Rule 8: Admin-authored evolution
+
+Admins can inject prompts, meeting requirements, coded directives, or silence.
+
+Screen map for v1
+
+1. Landing screen
+	•	sparse intro
+	•	apply button
+	•	cryptic copy
+	•	maybe rolling cohort count
+
+2. Application flow
+	•	profile questions
+	•	artist categories
+	•	optional writing prompts
+	•	consent + confidentiality agreement
+
+3. Waiting state
+	•	“application received”
+	•	ambiguous status
+	•	maybe queue symbolism, not literal numbers
+
+4. Status reveal
+
+User receives one of:
+	•	provisional member
+	•	assigned participant
+	•	restricted access participant
+	•	further instructions pending
+
+Not “you were selected because you were #43.” The machine keeps its mask on.
+
+5. Team room
+
+For Team A or Team B members.
+
+6. Hidden leader dashboard
+
+Special rooms, instructions, shadow permissions.
+
+7. Peripheral channel
+
+Limited anonymous communication route to leader or system.
+
+8. Briefings / directives screen
+
+System-issued prompts and mandatory meetings.
+
+9. Profile / identity mask
+
+Public alias, internal ID, confidentiality notice.
+
+Best MVP version
+
+Do not build the entire labyrinth first.
+
+Build the smallest functioning organism:
+
+MVP scope
+	•	user signup/login
+	•	application submission
+	•	automatic cohort assignment every 100 users
+	•	prime-based role assignment
+	•	role-based dashboards
+	•	team rooms
+	•	hidden leader room
+	•	admin prompt creation
+	•	restricted messaging visibility

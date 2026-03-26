@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+@import "tailwindcss";
+
+@theme inline {
+  --font-serif: 'Cormorant Garamond', serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-sans: 'IBM Plex Mono', monospace; /* Default to mono for institutional feel */
+
+  --color-background: hsl(0, 0%, 4%);
+  --color-foreground: hsl(0, 0%, 92%);
+  
+  --color-primary: hsl(38, 92%, 50%);
+  --color-primary-foreground: hsl(0, 0%, 4%);
+  
+  --color-secondary: hsl(0, 0%, 12%);
+  --color-secondary-foreground: hsl(0, 0%, 80%);
+  
+  --color-muted: hsl(0, 0%, 9%);
+  --color-muted-foreground: hsl(0, 0%, 55%);
+  
+  --color-accent: hsl(38, 92%, 50%);
+  --color-accent-foreground: hsl(0, 0%, 4%);
+  
+  --color-destructive: hsl(0, 84%, 60%);
+  --color-destructive-foreground: hsl(0, 0%, 98%);
+  
+  --color-border: hsl(0, 0%, 15%);
+  --color-input: hsl(0, 0%, 10%);
+  --color-ring: hsl(38, 92%, 50%);
+  
+  --color-card: hsl(0, 0%, 6%);
+  --color-card-foreground: hsl(0, 0%, 92%);
+  --color-card-border: hsl(0, 0%, 12%);
+
+  --radius-sm: 0px;
+  --radius-md: 2px;
+  --radius-lg: 4px;
+  --radius-xl: 8px;
+}
+
+:root {
+  --background: 0 0% 4%;
+  --foreground: 0 0% 92%;
+  --border: 0 0% 15%;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground antialiased font-mono selection:bg-primary selection:text-primary-foreground;
+    background-image: 
+      radial-gradient(circle at 50% 0%, rgba(25, 25, 25, 0.4) 0%, transparent 60%),
+      linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 100%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif tracking-widest uppercase;
+  }
+
+  /* Custom scrollbar for an institutional terminal feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(0, 0%, 4%);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(0, 0%, 20%);
+    border-radius: 0px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(38, 92%, 50%);
+  }
+}
+
+@layer utilities {
+  .glitch-hover {
+    position: relative;
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .glitch-hover:hover {
+    color: hsl(var(--primary));
+    text-shadow: 2px 0 0 rgba(255,0,0,0.5), -2px 0 0 rgba(0,255,0,0.5);
+  }
+
+  .border-glow {
+    box-shadow: 0 0 10px -2px rgba(217, 119, 6, 0.3);
+  }
+  
+  .border-glow:focus-within {
+    box-shadow: 0 0 20px -2px rgba(217, 119, 6, 0.6);
+  }
+}
