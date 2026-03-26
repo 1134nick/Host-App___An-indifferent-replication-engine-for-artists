@@ -15,6 +15,7 @@ export * from "./cohort";
 export * from "./cohortProcessResult";
 export * from "./cohortStatus";
 export * from "./cohortStatusProperty";
+export * from "./createChannelRequest";
 export * from "./createInstructionRequest";
 export * from "./deleteMessage200";
 export * from "./errorResponse";

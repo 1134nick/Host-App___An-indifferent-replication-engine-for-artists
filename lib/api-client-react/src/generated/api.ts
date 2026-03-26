@@ -24,6 +24,7 @@ import type {
   Cohort,
   CohortProcessResult,
   CohortStatus,
+  CreateChannelRequest,
   CreateInstructionRequest,
   DeleteMessage200,
   ErrorResponse,
@@ -1048,6 +1049,92 @@ export function useGetMyRooms<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Create a new member channel
+ */
+export const getCreateChannelUrl = () => {
+  return `/api/rooms`;
+};
+
+export const createChannel = async (
+  createChannelRequest: CreateChannelRequest,
+  options?: RequestInit,
+): Promise<Room> => {
+  return customFetch<Room>(getCreateChannelUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createChannelRequest),
+  });
+};
+
+export const getCreateChannelMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createChannel>>,
+    TError,
+    { data: BodyType<CreateChannelRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createChannel>>,
+  TError,
+  { data: BodyType<CreateChannelRequest> },
+  TContext
+> => {
+  const mutationKey = ["createChannel"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createChannel>>,
+    { data: BodyType<CreateChannelRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createChannel(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateChannelMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createChannel>>
+>;
+export type CreateChannelMutationBody = BodyType<CreateChannelRequest>;
+export type CreateChannelMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Create a new member channel
+ */
+export const useCreateChannel = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createChannel>>,
+    TError,
+    { data: BodyType<CreateChannelRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createChannel>>,
+  TError,
+  { data: BodyType<CreateChannelRequest> },
+  TContext
+> => {
+  return useMutation(getCreateChannelMutationOptions(options));
+};
 
 /**
  * @summary Get messages in a room

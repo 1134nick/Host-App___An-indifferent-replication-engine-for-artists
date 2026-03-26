@@ -179,16 +179,28 @@ export const GetMyRoomsResponseItem = zod.object({
   id: zod.number(),
   cohortId: zod.number(),
   roomType: zod.enum([
+    "general",
     "team_a",
     "team_b",
     "leader",
     "peripheral",
     "admin_broadcast",
+    "member_channel",
   ]),
   visibilityRule: zod.string(),
   memberCount: zod.number(),
+  displayName: zod.string().nullish(),
+  channelNumber: zod.number().nullish(),
+  createdByUserId: zod.number().nullish(),
 });
 export const GetMyRoomsResponse = zod.array(GetMyRoomsResponseItem);
+
+/**
+ * @summary Create a new member channel
+ */
+export const CreateChannelBody = zod.object({
+  name: zod.string(),
+});
 
 /**
  * @summary Get messages in a room

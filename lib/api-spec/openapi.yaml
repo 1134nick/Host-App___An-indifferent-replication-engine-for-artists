@@ -291,6 +291,29 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Room"
+    post:
+      operationId: createChannel
+      tags: [rooms]
+      summary: Create a new member channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChannelRequest"
+      responses:
+        "201":
+          description: Channel created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Room"
+        "403":
+          description: Not a cohort member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /rooms/{roomId}/messages:
     get:
@@ -725,6 +748,14 @@ components:
         - statusLabel
         - assignedAt
 
+    CreateChannelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+      required:
+        - name
+
     Room:
       type: object
       properties:
@@ -734,11 +765,20 @@ components:
           type: integer
         roomType:
           type: string
-          enum: [team_a, team_b, leader, peripheral, admin_broadcast]
+          enum: [general, team_a, team_b, leader, peripheral, admin_broadcast, member_channel]
         visibilityRule:
           type: string
         memberCount:
           type: integer
+        displayName:
+          type: string
+          nullable: true
+        channelNumber:
+          type: integer
+          nullable: true
+        createdByUserId:
+          type: integer
+          nullable: true
       required:
         - id
         - cohortId

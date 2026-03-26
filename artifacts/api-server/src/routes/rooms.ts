@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, roomsTable, roomMembersTable, messagesTable } from "@workspace/db";
-import { eq, and, desc, gte, sql } from "drizzle-orm";
+import { db, roomsTable, roomMembersTable, messagesTable, cohortRolesTable } from "@workspace/db";
+import { eq, and, desc, sql, max } from "drizzle-orm";
 import { generateMaskedLabel } from "../lib/cohort-engine";
 import { requireAuth } from "../lib/auth";
 
@@ -24,14 +24,80 @@ router.get("/", requireAuth, async (req, res) => {
         const [{ count }] = await db.select({ count: sql<number>`count(*)` })
           .from(roomMembersTable)
           .where(eq(roomMembersTable.roomId, roomId));
-        rooms.push({ ...room, memberCount: Number(count) });
+        rooms.push({
+          ...room,
+          memberCount: Number(count),
+        });
       }
     }
+
+    rooms.sort((a, b) => {
+      if (a.roomType === "general" && b.roomType !== "general") return -1;
+      if (a.roomType !== "general" && b.roomType === "general") return 1;
+      return (a.channelNumber ?? 0) - (b.channelNumber ?? 0);
+    });
 
     res.json(rooms);
   } catch (err) {
     req.log.error({ err }, "Error fetching rooms");
     res.status(500).json({ error: "internal_error", message: "Failed to fetch rooms" });
+  }
+});
+
+router.post("/", requireAuth, async (req, res) => {
+  const { name } = req.body;
+
+  if (!name || typeof name !== "string" || name.trim().length === 0 || name.trim().length > 50) {
+    res.status(400).json({ error: "validation_error", message: "Channel name is required (max 50 characters)" });
+    return;
+  }
+
+  try {
+    const [role] = await db.select()
+      .from(cohortRolesTable)
+      .where(eq(cohortRolesTable.userId, req.session.userId!))
+      .limit(1);
+
+    if (!role) {
+      res.status(403).json({ error: "forbidden", message: "You must be a cohort member to create a channel" });
+      return;
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const [maxResult] = await tx.select({ maxNum: max(roomsTable.channelNumber) })
+        .from(roomsTable)
+        .where(eq(roomsTable.cohortId, role.cohortId));
+
+      const nextNumber = (maxResult?.maxNum ?? 0) + 1;
+
+      const [newRoom] = await tx.insert(roomsTable).values({
+        cohortId: role.cohortId,
+        roomType: "member_channel",
+        visibilityRule: "all_members",
+        displayName: name.trim(),
+        channelNumber: nextNumber,
+        createdByUserId: req.session.userId!,
+      }).returning();
+
+      const cohortMembers = await tx.select({ userId: cohortRolesTable.userId })
+        .from(cohortRolesTable)
+        .where(eq(cohortRolesTable.cohortId, role.cohortId));
+
+      for (const member of cohortMembers) {
+        await tx.insert(roomMembersTable).values({
+          roomId: newRoom.id,
+          userId: member.userId,
+          maskedLabel: generateMaskedLabel(),
+        });
+      }
+
+      return { ...newRoom, memberCount: cohortMembers.length };
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    req.log.error({ err }, "Error creating channel");
+    res.status(500).json({ error: "internal_error", message: "Failed to create channel" });
   }
 });
 
@@ -50,10 +116,9 @@ router.get("/:roomId/messages", requireAuth, async (req, res) => {
 
     if (!membership) { res.status(403).json({ error: "forbidden", message: "No access to this room" }); return; }
 
-    const thirtyMinAgo = sql`now() - interval '30 minutes'`;
     const messages = await db.select()
       .from(messagesTable)
-      .where(and(eq(messagesTable.roomId, roomId), gte(messagesTable.createdAt, thirtyMinAgo)))
+      .where(eq(messagesTable.roomId, roomId))
       .orderBy(desc(messagesTable.createdAt))
       .limit(limit)
       .offset(offset);

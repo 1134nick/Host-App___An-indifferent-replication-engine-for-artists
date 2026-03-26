@@ -9,9 +9,11 @@
 export type RoomRoomType = (typeof RoomRoomType)[keyof typeof RoomRoomType];
 
 export const RoomRoomType = {
+  general: "general",
   team_a: "team_a",
   team_b: "team_b",
   leader: "leader",
   peripheral: "peripheral",
   admin_broadcast: "admin_broadcast",
+  member_channel: "member_channel",
 } as const;

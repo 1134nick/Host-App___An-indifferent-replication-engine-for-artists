@@ -1,13 +1,19 @@
-import { useGetMyRole, useGetMyRooms, useGetMyInstructions } from "@workspace/api-client-react";
+import { useGetMyRole, useGetMyRooms, useGetMyInstructions, useCreateChannel } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
-import { Lock, MessageSquare } from "lucide-react";
+import { Lock, MessageSquare, Plus } from "lucide-react";
 import { motion } from "framer-motion";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 export default function Dashboard() {
   const { data: role, isLoading: roleLoading } = useGetMyRole({ query: { retry: false } });
   const { data: rooms, isLoading: roomsLoading } = useGetMyRooms();
   const { data: instructions } = useGetMyInstructions();
   const [, setLocation] = useLocation();
+  const createChannel = useCreateChannel();
+  const queryClient = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [channelName, setChannelName] = useState("");
 
   if (roleLoading || roomsLoading) {
     return (
@@ -23,6 +29,25 @@ export default function Dashboard() {
   }
 
   const isPeripheral = role.roleType === "peripheral";
+
+  const generalRoom = rooms?.find((r) => r.roomType === "general");
+  const memberChannels = rooms?.filter((r) => r.roomType === "member_channel") ?? [];
+  const systemRooms = rooms?.filter((r) => r.roomType !== "general" && r.roomType !== "member_channel") ?? [];
+
+  const handleCreateChannel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!channelName.trim()) return;
+    createChannel.mutate(
+      { data: { name: channelName.trim() } },
+      {
+        onSuccess: () => {
+          setChannelName("");
+          setShowCreate(false);
+          queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
+        },
+      },
+    );
+  };
 
   return (
     <div className="flex-1 p-6 max-w-6xl mx-auto w-full">
@@ -43,18 +68,18 @@ export default function Dashboard() {
           <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground mb-4">Channels</h2>
 
           {rooms && rooms.length > 0 ? (
-            <div className="grid gap-4">
-              {rooms.map((room) => (
-                <Link key={room.id} href={`/rooms/${room.id}`}>
+            <div className="space-y-4">
+              {generalRoom && (
+                <Link href={`/rooms/${generalRoom.id}`}>
                   <div className="group bg-card border border-border p-6 hover:border-primary/50 transition-colors cursor-pointer weave-pattern">
                     <div className="flex justify-between items-start">
                       <div>
                         <h3 className="text-sm font-mono tracking-wider uppercase flex items-center gap-3">
                           <MessageSquare className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                          {room.roomType.replace('_', ' ')}
+                          General
                         </h3>
                         <p className="text-xs text-muted-foreground font-mono mt-2 tracking-widest">
-                          {room.memberCount} present
+                          {generalRoom.memberCount} present
                         </p>
                       </div>
                       <span className="text-xs border border-border px-2 py-1 text-muted-foreground group-hover:text-foreground transition-colors font-mono">
@@ -63,7 +88,98 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </Link>
-              ))}
+              )}
+
+              {memberChannels.length > 0 && (
+                <div className="space-y-2 pl-4 border-l border-border/50">
+                  {memberChannels.map((room) => (
+                    <Link key={room.id} href={`/rooms/${room.id}`}>
+                      <div className="group bg-card border border-border p-4 hover:border-primary/50 transition-colors cursor-pointer">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-3">
+                            <MessageSquare className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                            <span className="text-xs font-mono tracking-wider uppercase">
+                              {room.displayName || `Channel ${room.channelNumber}`}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-mono tracking-widest">
+                              {room.memberCount} present
+                            </span>
+                          </div>
+                          <span className="text-[10px] border border-border px-2 py-0.5 text-muted-foreground group-hover:text-foreground transition-colors font-mono">
+                            ENTER
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+
+              {systemRooms.length > 0 && (
+                <div className="space-y-2 pl-4 border-l border-border/50">
+                  {systemRooms.map((room) => (
+                    <Link key={room.id} href={`/rooms/${room.id}`}>
+                      <div className="group bg-card border border-border p-4 hover:border-primary/50 transition-colors cursor-pointer">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-3">
+                            <MessageSquare className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                            <span className="text-xs font-mono tracking-wider uppercase">
+                              {room.displayName || room.roomType.replace(/_/g, ' ')}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-mono tracking-widest">
+                              {room.memberCount} present
+                            </span>
+                          </div>
+                          <span className="text-[10px] border border-border px-2 py-0.5 text-muted-foreground group-hover:text-foreground transition-colors font-mono">
+                            ENTER
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+
+              {!isPeripheral && (
+                <div className="pl-4 border-l border-border/50">
+                  {showCreate ? (
+                    <form onSubmit={handleCreateChannel} className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        value={channelName}
+                        onChange={(e) => setChannelName(e.target.value)}
+                        placeholder="channel name..."
+                        className="flex-1 bg-background border-b border-border px-0 py-2 text-xs font-mono focus:outline-none focus:border-primary transition-colors"
+                        autoFocus
+                        maxLength={50}
+                        disabled={createChannel.isPending}
+                      />
+                      <button
+                        type="submit"
+                        disabled={!channelName.trim() || createChannel.isPending}
+                        className="text-xs border border-foreground px-3 py-1.5 font-mono uppercase tracking-widest hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
+                      >
+                        {createChannel.isPending ? "..." : "Create"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowCreate(false); setChannelName(""); }}
+                        className="text-xs text-muted-foreground hover:text-foreground font-mono uppercase tracking-widest px-2 py-1.5"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => setShowCreate(true)}
+                      className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors py-2"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      New Channel
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="p-8 border border-dashed border-border text-center">

@@ -3,6 +3,7 @@ import {
   useGetRoomMessages,
   useSendMessage,
   useGetMyRole,
+  useGetMyRooms,
   useRequestUploadUrl,
   useDeleteMessage,
   useGetMe,
@@ -177,6 +178,8 @@ export default function Room() {
   });
   const { data: role } = useGetMyRole();
   const { data: me } = useGetMe();
+  const { data: rooms } = useGetMyRooms();
+  const currentRoom = rooms?.find((r) => r.id === roomId);
   const sendMessageMutation = useSendMessage();
   const requestUploadUrlMutation = useRequestUploadUrl();
   const deleteMessageMutation = useDeleteMessage();
@@ -448,7 +451,11 @@ export default function Room() {
           <ArrowLeft className="w-4 h-4" />
           Back
         </Link>
-        <span className="depth-text text-sm uppercase tracking-[0.2em]">Channel {roomId}</span>
+        <span className="depth-text text-sm uppercase tracking-[0.2em]">
+          {currentRoom?.roomType === "general"
+            ? "General"
+            : currentRoom?.displayName || `Channel ${roomId}`}
+        </span>
       </header>
 
       <div className="weave-divider w-full mb-4 shrink-0" />

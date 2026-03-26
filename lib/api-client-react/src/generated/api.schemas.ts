@@ -137,14 +137,20 @@ export interface UserRole {
   assignedAt: string;
 }
 
+export interface CreateChannelRequest {
+  name: string;
+}
+
 export type RoomRoomType = (typeof RoomRoomType)[keyof typeof RoomRoomType];
 
 export const RoomRoomType = {
+  general: "general",
   team_a: "team_a",
   team_b: "team_b",
   leader: "leader",
   peripheral: "peripheral",
   admin_broadcast: "admin_broadcast",
+  member_channel: "member_channel",
 } as const;
 
 export interface Room {
@@ -153,6 +159,9 @@ export interface Room {
   roomType: RoomRoomType;
   visibilityRule: string;
   memberCount: number;
+  displayName?: string | null;
+  channelNumber?: number | null;
+  createdByUserId?: number | null;
 }
 
 export type MessageMediaType =

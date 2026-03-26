@@ -13,4 +13,7 @@ export interface Room {
   roomType: RoomRoomType;
   visibilityRule: string;
   memberCount: number;
+  displayName?: string | null;
+  channelNumber?: number | null;
+  createdByUserId?: number | null;
 }

@@ -85,8 +85,9 @@ Tables: `users`, `cohorts`, `applications`, `cohort_roles`, `rooms`, `room_membe
 - `GET /api/cohorts/current` - Open cohort status
 - `POST /api/cohorts/:id/process` - Process cohort (admin)
 - `GET /api/my-role` - My role assignment
-- `GET /api/rooms` - My accessible rooms
-- `GET /api/rooms/:id/messages` - Room messages
+- `GET /api/rooms` - My accessible rooms (sorted: general first, then member channels by number)
+- `POST /api/rooms` - Create a member channel (name required, auto-assigns channel number)
+- `GET /api/rooms/:id/messages` - Room messages (no auto-expiry, all messages persist)
 - `POST /api/rooms/:id/messages` - Send message
 - `DELETE /api/rooms/:roomId/messages/:messageId` - Delete own message
 - `GET /api/instructions` - My instructions
@@ -105,9 +106,17 @@ Members can send photos, voice messages, and short videos in rooms. All identiti
 - **Video**: getUserMedia (video+audio) → MediaRecorder with 20s limit → presigned URL upload → message with `mediaType: "video"`
 - **Captions**: optional text alongside media
 - **Delete**: users can delete their own messages via `DELETE /api/rooms/:roomId/messages/:messageId`
-- **Auto-expiry**: messages older than 30 minutes are automatically purged (cleanup runs every 60s; query also filters)
+- **Persistence**: messages are stored indefinitely (no auto-expiry). Members can manually delete their own messages.
 - **Object storage**: Replit App Storage (GCS bucket), presigned PUT URLs, served back via `/api/storage/objects/*` with Range request support
 - **Audio playback**: BlobAudioPlayer component fetches audio as blob, detects format from magic bytes (MP4/WebM/OGG), creates blob URL for reliable playback
+
+## Member Channels
+
+- **General channel**: system-created, permanent, all cohort members auto-join. Pinned at top of dashboard.
+- **Member channels**: any cohort member can create a named channel via `POST /api/rooms` with `{ name: "..." }`. Channel numbers are assigned sequentially. All existing cohort members are auto-added to new channels.
+- **Dashboard layout**: General pinned at top, member-created channels listed below with left-border indent. "New Channel" button at bottom.
+- **Room types**: `general`, `member_channel`, plus system types (`team_a`, `team_b`, `leader`, `peripheral`, `admin_broadcast`)
+- **DB columns on rooms**: `display_name` (text, nullable), `channel_number` (integer, nullable), `created_by_user_id` (integer, nullable FK to users)
 
 ## Anonymous Identity System
 
