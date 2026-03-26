@@ -21,7 +21,7 @@ export default function Landing() {
           Host
         </h1>
 
-        <div className="max-w-md space-y-4 text-sm leading-relaxed text-muted-foreground lowercase tracking-wide">
+        <div className="max-w-md space-y-4 text-sm leading-relaxed text-muted-foreground tracking-wide">
           <p>time is the substance.</p>
           <p>this members only platform is anonymous.</p>
           <p>Users interact with voice messages between participants.</p>

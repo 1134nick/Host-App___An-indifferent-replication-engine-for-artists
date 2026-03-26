@@ -7,16 +7,16 @@ import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 
-const applicationSchema = z.object({
+const applicationInputSchema = z.object({
   age: z.coerce.number().min(18, "Must be 18+"),
   nationality: z.string().min(2, "Required"),
   profession: z.string().min(2, "Required"),
   educationalBackground: z.string().optional(),
   artistStatement: z.string().min(50, "Minimum 50 characters."),
-  skillTags: z.string().transform(str => str.split(",").map(s => s.trim()).filter(Boolean))
+  skillTags: z.string().min(1, "Required"),
 });
 
-type ApplicationForm = z.infer<typeof applicationSchema>;
+type ApplicationInput = z.infer<typeof applicationInputSchema>;
 
 export default function Apply() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
@@ -29,20 +29,24 @@ export default function Apply() {
     if (existingApp) setLocation("/status");
   }, [isAuthenticated, authLoading, existingApp, setLocation]);
 
-  const form = useForm<ApplicationForm>({
-    resolver: zodResolver(applicationSchema as any),
+  const form = useForm<ApplicationInput>({
+    resolver: zodResolver(applicationInputSchema),
     defaultValues: {
       age: 18,
       nationality: "",
       profession: "",
       educationalBackground: "",
       artistStatement: "",
-      skillTags: [] as any
+      skillTags: ""
     }
   });
 
-  const onSubmit = (data: ApplicationForm) => {
-    submitApp.mutate({ data }, {
+  const onSubmit = (data: ApplicationInput) => {
+    const payload = {
+      ...data,
+      skillTags: data.skillTags.split(",").map(s => s.trim()).filter(Boolean),
+    };
+    submitApp.mutate({ data: payload }, {
       onSuccess: () => {
         setLocation("/status");
       }
@@ -62,7 +66,7 @@ export default function Apply() {
         </p>
       </div>
 
-      <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-10">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-10">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-widest text-muted-foreground">Age</label>
