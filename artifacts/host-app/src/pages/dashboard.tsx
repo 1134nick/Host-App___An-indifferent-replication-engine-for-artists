@@ -140,7 +140,7 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {!isPeripheral && (
+              {rooms && rooms.length > 0 && (
                 <div className="pl-4 border-l border-border/50">
                   {showCreate ? (
                     <form onSubmit={handleCreateChannel} className="flex gap-2 items-center">
