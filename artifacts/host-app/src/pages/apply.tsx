@@ -59,7 +59,7 @@ export default function Apply() {
   return (
     <div className="flex-1 max-w-3xl mx-auto w-full px-6 py-12">
       <div className="mb-12 pb-8">
-        <h1 className="depth-text text-xl tracking-[0.2em] uppercase mb-4">Dossier</h1>
+        <h1 className="depth-heading tracking-[0.2em] uppercase mb-4">Dossier</h1>
         <div className="weave-divider w-full mb-4" />
         <p className="text-muted-foreground text-xs tracking-widest lowercase">
           be precise. be devoid of pretense.

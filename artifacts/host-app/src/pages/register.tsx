@@ -35,7 +35,7 @@ export default function Register() {
         <div className="weave-divider w-full mb-10" />
 
         <div className="flex flex-col items-center mb-10 text-center">
-          <h2 className="depth-text text-xl tracking-[0.2em] uppercase">Initialize</h2>
+          <h2 className="depth-heading tracking-[0.2em] uppercase">Initialize</h2>
           <p className="text-xs text-muted-foreground mt-3 tracking-widest lowercase">begin intake</p>
         </div>
 

@@ -34,7 +34,7 @@ export default function Status() {
         className="max-w-xl w-full"
       >
         <div className="border border-border bg-card p-8 md:p-12 weave-pattern">
-          <h2 className="depth-text text-xl tracking-[0.2em] uppercase mb-8">
+          <h2 className="depth-heading tracking-[0.2em] uppercase mb-8">
             Status
           </h2>
 

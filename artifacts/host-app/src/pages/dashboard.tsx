@@ -27,7 +27,7 @@ export default function Dashboard() {
   return (
     <div className="flex-1 p-6 max-w-6xl mx-auto w-full">
       <header className="mb-12">
-        <h1 className="depth-text text-xl tracking-[0.2em] uppercase mb-4">
+        <h1 className="depth-heading tracking-[0.2em] uppercase mb-4">
           Console
         </h1>
         <div className="weave-divider w-full mb-4" />

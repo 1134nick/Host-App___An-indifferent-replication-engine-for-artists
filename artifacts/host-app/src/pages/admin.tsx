@@ -26,7 +26,7 @@ export default function Admin() {
   return (
     <div className="flex-1 p-6 max-w-7xl mx-auto w-full font-mono text-sm">
       <header className="mb-10 pb-6">
-        <h1 className="depth-text text-xl tracking-[0.2em] uppercase mb-4">Root Access</h1>
+        <h1 className="depth-heading tracking-[0.2em] uppercase mb-4">Root Access</h1>
         <div className="weave-divider w-full" />
       </header>
 
