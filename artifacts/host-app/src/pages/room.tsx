@@ -7,7 +7,133 @@ import {
 } from "@workspace/api-client-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2 } from "lucide-react";
+import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, Play, Pause, Loader2 } from "lucide-react";
+
+function BlobAudioPlayer({ src }: { src: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [blobUrl]);
+
+  const loadAudio = useCallback(async () => {
+    if (blobUrl) return;
+    setLoading(true);
+    setError(false);
+    try {
+      const resp = await fetch(src);
+      if (!resp.ok) throw new Error("fetch failed");
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      setBlobUrl(url);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [src, blobUrl]);
+
+  const togglePlay = useCallback(async () => {
+    if (!blobUrl) {
+      await loadAudio();
+      return;
+    }
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playing) {
+      audio.pause();
+    } else {
+      audio.play();
+    }
+  }, [blobUrl, playing, loadAudio]);
+
+  useEffect(() => {
+    if (!blobUrl) return;
+    const audio = new Audio(blobUrl);
+    audioRef.current = audio;
+
+    audio.addEventListener("loadedmetadata", () => setDuration(audio.duration));
+    audio.addEventListener("timeupdate", () => setProgress(audio.currentTime));
+    audio.addEventListener("play", () => setPlaying(true));
+    audio.addEventListener("pause", () => setPlaying(false));
+    audio.addEventListener("ended", () => { setPlaying(false); setProgress(0); });
+    audio.addEventListener("error", () => setError(true));
+
+    audio.play().catch(() => {});
+
+    return () => {
+      audio.pause();
+      audio.src = "";
+    };
+  }, [blobUrl]);
+
+  const formatTime = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    audio.currentTime = pct * duration;
+  };
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-xs" style={{ color: "#999" }}>
+        <Volume2 className="w-4 h-4" />
+        <span>audio unavailable</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <button
+        onClick={togglePlay}
+        disabled={loading}
+        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+        style={{ background: "#333", color: "#f5f0e8" }}
+      >
+        {loading ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        ) : playing ? (
+          <Pause className="w-3.5 h-3.5" />
+        ) : (
+          <Play className="w-3.5 h-3.5 ml-0.5" />
+        )}
+      </button>
+      <div
+        className="flex-1 h-1.5 rounded-full cursor-pointer"
+        style={{ background: "#444" }}
+        onClick={handleSeek}
+      >
+        <div
+          className="h-full rounded-full"
+          style={{
+            background: "#f5f0e8",
+            width: duration > 0 ? `${(progress / duration) * 100}%` : "0%",
+            transition: "width 0.1s linear",
+          }}
+        />
+      </div>
+      <span className="text-xs shrink-0" style={{ color: "#999", fontFamily: "var(--font-mono)" }}>
+        {duration > 0 ? formatTime(playing ? progress : duration) : "0:00"}
+      </span>
+    </div>
+  );
+}
 
 type MediaMode = "none" | "camera" | "recording";
 
@@ -242,15 +368,7 @@ export default function Room() {
                 </div>
               )}
               {msg.mediaType === "audio" && msg.mediaUrl && (
-                <div className="mt-2 flex items-center gap-2">
-                  <Volume2 className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <audio
-                    controls
-                    preload="metadata"
-                    src={`/api/storage${msg.mediaUrl}`}
-                    className="max-w-full"
-                  />
-                </div>
+                <BlobAudioPlayer src={`/api/storage${msg.mediaUrl}`} />
               )}
             </div>
           );
