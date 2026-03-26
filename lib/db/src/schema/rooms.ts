@@ -4,7 +4,7 @@ import { z } from "zod/v4";
 import { cohortsTable } from "./cohorts";
 import { usersTable } from "./users";
 
-export const roomTypeEnum = pgEnum("room_type", ["team_a", "team_b", "leader", "peripheral", "admin_broadcast"]);
+export const roomTypeEnum = pgEnum("room_type", ["general", "team_a", "team_b", "leader", "peripheral", "admin_broadcast"]);
 
 export const roomsTable = pgTable("rooms", {
   id: serial("id").primaryKey(),

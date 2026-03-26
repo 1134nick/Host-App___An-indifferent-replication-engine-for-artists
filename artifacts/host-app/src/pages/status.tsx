@@ -84,7 +84,7 @@ export default function Status() {
             {!isAssigned && (
               <div className="mt-8 p-6 border border-border bg-background">
                 <p className="text-xs uppercase tracking-widest text-muted-foreground leading-relaxed">
-                  Awaiting cohort finalization. Placement is dictated by internal architectural requirements. Further instructions pending.
+                  Dossier received. Access is being initialized. Further instructions pending.
                 </p>
               </div>
             )}

@@ -15,6 +15,9 @@ export const cohortRolesTable = pgTable("cohort_roles", {
   teamName: teamNameEnum("team_name"),
   isHiddenRole: boolean("is_hidden_role").notNull().default(false),
   assignedAt: timestamp("assigned_at").notNull().defaultNow(),
+  // Prime association metadata — stored for future use, does not gate access
+  isPrimePosition: boolean("is_prime_position"),
+  primeTeamAssignment: text("prime_team_assignment"),
 });
 
 export const insertCohortRoleSchema = createInsertSchema(cohortRolesTable).omit({ id: true, assignedAt: true });

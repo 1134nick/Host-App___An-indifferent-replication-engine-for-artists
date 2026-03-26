@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, applicationsTable, usersTable, cohortsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireAdmin } from "../lib/auth";
-import { getOrCreateOpenCohort } from "../lib/cohort-engine";
+import { getOrCreateOpenCohort, assignUserOnApplication } from "../lib/cohort-engine";
 
 const router = Router();
 
@@ -38,12 +38,15 @@ router.post("/", requireAuth, async (req, res) => {
       personalityAnswers: personalityAnswers || null,
       skillTags: skillTags || [],
       artistStatement,
-      status: "submitted",
+      status: "assigned",
     }).returning();
 
     await db.update(cohortsTable)
       .set({ applicantCount: newOrder })
       .where(eq(cohortsTable.id, cohort.id));
+
+    // Grant immediate access — prime data stored as metadata for future use
+    await assignUserOnApplication(req.session.userId!, cohort.id, newOrder);
 
     res.status(201).json({
       id: application.id,

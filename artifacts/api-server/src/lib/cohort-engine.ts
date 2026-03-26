@@ -1,10 +1,24 @@
 import { db, cohortsTable, applicationsTable, cohortRolesTable, roomsTable, roomMembersTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
-const PRIMES_TO_100 = [2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97];
-const TEAM_A_POSITIONS = [2,3,5,7,11,13,17,19,23,29,31,37];
-const TEAM_B_POSITIONS = [41,43,47,53,59,61,67,71,73,79,83,89];
-const LEADER_POSITION = 97;
+// Prime positions within a 100-person cohort — stored as metadata, not used for access control
+export const PRIMES_TO_100 = [2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97];
+export const TEAM_A_POSITIONS = [2,3,5,7,11,13,17,19,23,29,31,37];
+export const TEAM_B_POSITIONS = [41,43,47,53,59,61,67,71,73,79,83,89];
+export const LEADER_POSITION = 97;
+
+/** Compute the prime association metadata for a given position — for informational use only */
+export function computePrimeAssociation(position: number): {
+  isPrimePosition: boolean;
+  primeTeamAssignment: string | null;
+} {
+  const isPrimePosition = PRIMES_TO_100.includes(position);
+  let primeTeamAssignment: string | null = null;
+  if (TEAM_A_POSITIONS.includes(position)) primeTeamAssignment = "team_a";
+  else if (TEAM_B_POSITIONS.includes(position)) primeTeamAssignment = "team_b";
+  else if (position === LEADER_POSITION) primeTeamAssignment = "leader";
+  return { isPrimePosition, primeTeamAssignment };
+}
 
 export async function getOrCreateOpenCohort(): Promise<{ id: number; cohortNumber: number; applicantCount: number }> {
   const existing = await db.select()
@@ -26,78 +40,88 @@ export async function getOrCreateOpenCohort(): Promise<{ id: number; cohortNumbe
   return newCohort;
 }
 
+/** Get or create the shared general room for a cohort */
+async function getOrCreateGeneralRoom(cohortId: number): Promise<number> {
+  const existing = await db.select()
+    .from(roomsTable)
+    .where(and(eq(roomsTable.cohortId, cohortId), eq(roomsTable.roomType, "general")))
+    .limit(1);
+
+  if (existing.length > 0) return existing[0].id;
+
+  const [room] = await db.insert(roomsTable)
+    .values({ cohortId, roomType: "general", visibilityRule: "all_members" })
+    .returning();
+
+  return room.id;
+}
+
+/**
+ * Called immediately when a user submits an application.
+ * Grants full access regardless of prime position.
+ * Prime association is stored as metadata for future use.
+ */
+export async function assignUserOnApplication(
+  userId: number,
+  cohortId: number,
+  applicationOrder: number
+): Promise<void> {
+  const { isPrimePosition, primeTeamAssignment } = computePrimeAssociation(applicationOrder);
+
+  // All users are assigned as team_member — prime data stored but not used for access
+  await db.insert(cohortRolesTable).values({
+    cohortId,
+    userId,
+    roleType: "team_member",
+    teamName: null,
+    isHiddenRole: false,
+    isPrimePosition,
+    primeTeamAssignment,
+  });
+
+  // Add to the shared general room (created if it doesn't exist yet)
+  const generalRoomId = await getOrCreateGeneralRoom(cohortId);
+
+  const alreadyMember = await db.select()
+    .from(roomMembersTable)
+    .where(and(eq(roomMembersTable.roomId, generalRoomId), eq(roomMembersTable.userId, userId)))
+    .limit(1);
+
+  if (alreadyMember.length === 0) {
+    await db.insert(roomMembersTable).values({ roomId: generalRoomId, userId });
+  }
+}
+
+/**
+ * Admin-only: process an entire cohort using prime-based logic.
+ * This function is preserved for future use — it may be repurposed
+ * for activities, sub-groups, or other structural uses beyond access control.
+ */
 export async function processCohort(cohortId: number) {
   const applications = await db.select()
     .from(applicationsTable)
     .where(eq(applicationsTable.cohortId, cohortId));
 
-  const roles: Array<{ userId: number; roleType: "team_member" | "leader" | "peripheral"; teamName: "team_a" | "team_b" | null; isHiddenRole: boolean }> = [];
+  let teamACount = 0, teamBCount = 0, leaderAssigned = false, peripheralCount = 0;
 
   for (const app of applications) {
     const order = app.applicationOrder!;
-    if (TEAM_A_POSITIONS.includes(order)) {
-      roles.push({ userId: app.userId, roleType: "team_member", teamName: "team_a", isHiddenRole: false });
-    } else if (TEAM_B_POSITIONS.includes(order)) {
-      roles.push({ userId: app.userId, roleType: "team_member", teamName: "team_b", isHiddenRole: false });
-    } else if (order === LEADER_POSITION) {
-      roles.push({ userId: app.userId, roleType: "leader", teamName: null, isHiddenRole: true });
-    } else if (PRIMES_TO_100.includes(order)) {
-      roles.push({ userId: app.userId, roleType: "team_member", teamName: null, isHiddenRole: false });
-    } else {
-      roles.push({ userId: app.userId, roleType: "peripheral", teamName: null, isHiddenRole: false });
-    }
+    const { isPrimePosition, primeTeamAssignment } = computePrimeAssociation(order);
+
+    // Update existing role record with refreshed prime metadata
+    await db.update(cohortRolesTable)
+      .set({ isPrimePosition, primeTeamAssignment })
+      .where(and(eq(cohortRolesTable.cohortId, cohortId), eq(cohortRolesTable.userId, app.userId)));
+
+    if (primeTeamAssignment === "team_a") teamACount++;
+    else if (primeTeamAssignment === "team_b") teamBCount++;
+    else if (primeTeamAssignment === "leader") leaderAssigned = true;
+    else if (!isPrimePosition) peripheralCount++;
   }
-
-  if (roles.length > 0) {
-    await db.insert(cohortRolesTable).values(
-      roles.map(r => ({ cohortId, ...r }))
-    );
-  }
-
-  const roomTypes = ["team_a", "team_b", "leader", "peripheral", "admin_broadcast"] as const;
-  const createdRooms: Record<string, number> = {};
-
-  for (const roomType of roomTypes) {
-    const [room] = await db.insert(roomsTable)
-      .values({ cohortId, roomType, visibilityRule: "role_based" })
-      .returning();
-    createdRooms[roomType] = room.id;
-  }
-
-  for (const role of roles) {
-    const roomsForUser: number[] = [];
-
-    if (role.roleType === "team_member" && role.teamName === "team_a") {
-      roomsForUser.push(createdRooms["team_a"]);
-    } else if (role.roleType === "team_member" && role.teamName === "team_b") {
-      roomsForUser.push(createdRooms["team_b"]);
-    } else if (role.roleType === "leader") {
-      roomsForUser.push(createdRooms["leader"], createdRooms["team_a"], createdRooms["team_b"]);
-    } else if (role.roleType === "peripheral") {
-      roomsForUser.push(createdRooms["peripheral"]);
-    }
-
-    for (const roomId of roomsForUser) {
-      await db.insert(roomMembersTable).values({ roomId, userId: role.userId });
-    }
-  }
-
-  await db.update(cohortsTable)
-    .set({ status: "active", lockedAt: new Date() })
-    .where(eq(cohortsTable.id, cohortId));
-
-  await db.update(applicationsTable)
-    .set({ status: "assigned" })
-    .where(eq(applicationsTable.cohortId, cohortId));
-
-  const teamACount = roles.filter(r => r.teamName === "team_a").length;
-  const teamBCount = roles.filter(r => r.teamName === "team_b").length;
-  const leaderAssigned = roles.some(r => r.roleType === "leader");
-  const peripheralCount = roles.filter(r => r.roleType === "peripheral").length;
 
   return {
     cohortId,
-    rolesAssigned: roles.length,
+    rolesAssigned: applications.length,
     teamACount,
     teamBCount,
     leaderAssigned,
@@ -105,13 +129,6 @@ export async function processCohort(cohortId: number) {
   };
 }
 
-export function getRoleStatusLabel(roleType: string, teamName: string | null): string {
-  if (roleType === "team_member") {
-    return "Assigned Participant";
-  } else if (roleType === "leader") {
-    return "Provisional Member";
-  } else if (roleType === "peripheral") {
-    return "Restricted Access Participant";
-  }
-  return "Further Instructions Pending";
+export function getRoleStatusLabel(_roleType: string, _teamName: string | null): string {
+  return "Active Member";
 }
