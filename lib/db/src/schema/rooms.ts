@@ -17,6 +17,7 @@ export const roomMembersTable = pgTable("room_members", {
   id: serial("id").primaryKey(),
   roomId: integer("room_id").notNull().references(() => roomsTable.id),
   userId: integer("user_id").notNull().references(() => usersTable.id),
+  maskedLabel: text("masked_label"), // fixed anonymous identity per user per room
 });
 
 export const insertRoomSchema = createInsertSchema(roomsTable).omit({ id: true });

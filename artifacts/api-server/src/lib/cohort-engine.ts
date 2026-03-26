@@ -40,6 +40,17 @@ export async function getOrCreateOpenCohort(): Promise<{ id: number; cohortNumbe
   return newCohort;
 }
 
+const SIGNAL_ADJECTIVES = ["SILENT","HOLLOW","LATENT","OPAQUE","COVERT","VEILED","MUTED","REMOTE","OBSCURE","INERT","STILL","VOID"];
+const SIGNAL_NOUNS = ["SIGNAL","NODE","RELAY","CONDUIT","ENTITY","VECTOR","THREAD","CHANNEL","CIRCUIT","CARRIER"];
+
+/** Generate a stable anonymous label for a user in a room */
+export function generateMaskedLabel(): string {
+  const adj = SIGNAL_ADJECTIVES[Math.floor(Math.random() * SIGNAL_ADJECTIVES.length)];
+  const noun = SIGNAL_NOUNS[Math.floor(Math.random() * SIGNAL_NOUNS.length)];
+  const num = Math.floor(Math.random() * 900) + 100;
+  return `${adj}-${noun}-${num}`;
+}
+
 /** Get or create the shared general room for a cohort */
 async function getOrCreateGeneralRoom(cohortId: number): Promise<number> {
   const existing = await db.select()
@@ -79,7 +90,7 @@ export async function assignUserOnApplication(
     primeTeamAssignment,
   });
 
-  // Add to the shared general room (created if it doesn't exist yet)
+  // Add to the shared general room with a permanent anonymous label
   const generalRoomId = await getOrCreateGeneralRoom(cohortId);
 
   const alreadyMember = await db.select()
@@ -88,7 +99,11 @@ export async function assignUserOnApplication(
     .limit(1);
 
   if (alreadyMember.length === 0) {
-    await db.insert(roomMembersTable).values({ roomId: generalRoomId, userId });
+    await db.insert(roomMembersTable).values({
+      roomId: generalRoomId,
+      userId,
+      maskedLabel: generateMaskedLabel(),
+    });
   }
 }
 

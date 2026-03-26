@@ -25,6 +25,8 @@ tags:
     description: Admin instructions
   - name: admin
     description: Admin operations
+  - name: storage
+    description: File storage
 
 paths:
   /healthz:
@@ -413,6 +415,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a presigned upload URL for media files
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestUploadUrlRequest"
+      responses:
+        "200":
+          description: Presigned URL for direct upload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestUploadUrlResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -707,9 +734,17 @@ components:
           nullable: true
         content:
           type: string
+          nullable: true
         isSystemMessage:
           type: boolean
         maskedSenderLabel:
+          type: string
+          nullable: true
+        mediaType:
+          type: string
+          nullable: true
+          enum: [image, audio]
+        mediaUrl:
           type: string
           nullable: true
         createdAt:
@@ -718,7 +753,6 @@ components:
       required:
         - id
         - roomId
-        - content
         - isSystemMessage
         - createdAt
 
@@ -727,9 +761,39 @@ components:
       properties:
         content:
           type: string
-          minLength: 1
+          nullable: true
+        mediaType:
+          type: string
+          nullable: true
+          enum: [image, audio]
+        mediaUrl:
+          type: string
+          nullable: true
+
+    RequestUploadUrlRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        contentType:
+          type: string
       required:
-        - content
+        - name
+        - size
+        - contentType
+
+    RequestUploadUrlResponse:
+      type: object
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+      required:
+        - uploadURL
+        - objectPath
 
     Instruction:
       type: object

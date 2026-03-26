@@ -1,37 +1,30 @@
 import { Router } from "express";
-import { db, roomsTable, roomMembersTable, messagesTable, usersTable } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { db, roomsTable, roomMembersTable, messagesTable } from "@workspace/db";
+import { eq, and, desc, sql } from "drizzle-orm";
+import { generateMaskedLabel } from "../lib/cohort-engine";
 import { requireAuth } from "../lib/auth";
-import { sql } from "drizzle-orm";
 
 const router = Router();
 
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const memberships = await db.select({
-      roomId: roomMembersTable.roomId,
-    })
-    .from(roomMembersTable)
-    .where(eq(roomMembersTable.userId, req.session.userId!));
+    const memberships = await db.select({ roomId: roomMembersTable.roomId })
+      .from(roomMembersTable)
+      .where(eq(roomMembersTable.userId, req.session.userId!));
 
     if (memberships.length === 0) {
       res.json([]);
       return;
     }
 
-    const roomIds = memberships.map(m => m.roomId);
     const rooms = [];
-
-    for (const roomId of roomIds) {
+    for (const { roomId } of memberships) {
       const [room] = await db.select().from(roomsTable).where(eq(roomsTable.id, roomId)).limit(1);
       if (room) {
-        const memberCount = await db.select({ count: sql<number>`count(*)` })
+        const [{ count }] = await db.select({ count: sql<number>`count(*)` })
           .from(roomMembersTable)
           .where(eq(roomMembersTable.roomId, roomId));
-        rooms.push({
-          ...room,
-          memberCount: Number(memberCount[0]?.count ?? 0),
-        });
+        rooms.push({ ...room, memberCount: Number(count) });
       }
     }
 
@@ -44,10 +37,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 router.get("/:roomId/messages", requireAuth, async (req, res) => {
   const roomId = parseInt(req.params.roomId);
-  if (isNaN(roomId)) {
-    res.status(400).json({ error: "validation_error", message: "Invalid room ID" });
-    return;
-  }
+  if (isNaN(roomId)) { res.status(400).json({ error: "validation_error", message: "Invalid room ID" }); return; }
 
   const limit = parseInt(req.query.limit as string) || 50;
   const offset = parseInt(req.query.offset as string) || 0;
@@ -58,10 +48,7 @@ router.get("/:roomId/messages", requireAuth, async (req, res) => {
       .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)))
       .limit(1);
 
-    if (!membership) {
-      res.status(403).json({ error: "forbidden", message: "You do not have access to this room" });
-      return;
-    }
+    if (!membership) { res.status(403).json({ error: "forbidden", message: "No access to this room" }); return; }
 
     const messages = await db.select()
       .from(messagesTable)
@@ -79,36 +66,48 @@ router.get("/:roomId/messages", requireAuth, async (req, res) => {
 
 router.post("/:roomId/messages", requireAuth, async (req, res) => {
   const roomId = parseInt(req.params.roomId);
-  if (isNaN(roomId)) {
-    res.status(400).json({ error: "validation_error", message: "Invalid room ID" });
+  if (isNaN(roomId)) { res.status(400).json({ error: "validation_error", message: "Invalid room ID" }); return; }
+
+  const { content, mediaType, mediaUrl } = req.body;
+
+  // Must have either text content or a media attachment
+  if (!content?.trim() && !mediaUrl) {
+    res.status(400).json({ error: "validation_error", message: "Message must have content or media" });
     return;
   }
 
-  const { content } = req.body;
-  if (!content || content.trim().length === 0) {
-    res.status(400).json({ error: "validation_error", message: "Message content is required" });
+  // Validate mediaType if provided
+  if (mediaType && !["image", "audio"].includes(mediaType)) {
+    res.status(400).json({ error: "validation_error", message: "mediaType must be image or audio" });
     return;
   }
 
   try {
+    // Check room membership and get the user's masked label
     const [membership] = await db.select()
       .from(roomMembersTable)
       .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)))
       .limit(1);
 
-    if (!membership) {
-      res.status(403).json({ error: "forbidden", message: "You do not have access to this room" });
-      return;
-    }
+    if (!membership) { res.status(403).json({ error: "forbidden", message: "No access to this room" }); return; }
 
-    const [room] = await db.select().from(roomsTable).where(eq(roomsTable.id, roomId)).limit(1);
+    // Backfill masked label for members who joined before this feature existed
+    if (!membership.maskedLabel) {
+      const label = generateMaskedLabel();
+      await db.update(roomMembersTable)
+        .set({ maskedLabel: label })
+        .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)));
+      membership.maskedLabel = label;
+    }
 
     const [message] = await db.insert(messagesTable).values({
       roomId,
       userId: req.session.userId!,
-      content: content.trim(),
+      content: content?.trim() || "",
       isSystemMessage: false,
-      maskedSenderLabel: room.roomType === "peripheral" ? "Member" : null,
+      maskedSenderLabel: membership.maskedLabel || "UNKNOWN-ENTITY",
+      mediaType: mediaType || null,
+      mediaUrl: mediaUrl || null,
     }).returning();
 
     res.status(201).json(message);

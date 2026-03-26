@@ -162,19 +162,51 @@ export interface Room {
   memberCount: number;
 }
 
+export type MessageMediaType =
+  | (typeof MessageMediaType)[keyof typeof MessageMediaType]
+  | null;
+
+export const MessageMediaType = {
+  image: "image",
+  audio: "audio",
+} as const;
+
 export interface Message {
   id: number;
   roomId: number;
   userId?: number | null;
-  content: string;
+  content?: string | null;
   isSystemMessage: boolean;
   maskedSenderLabel?: string | null;
+  mediaType?: MessageMediaType;
+  mediaUrl?: string | null;
   createdAt: string;
 }
 
+export type SendMessageRequestMediaType =
+  | (typeof SendMessageRequestMediaType)[keyof typeof SendMessageRequestMediaType]
+  | null;
+
+export const SendMessageRequestMediaType = {
+  image: "image",
+  audio: "audio",
+} as const;
+
 export interface SendMessageRequest {
-  /** @minLength 1 */
-  content: string;
+  content?: string | null;
+  mediaType?: SendMessageRequestMediaType;
+  mediaUrl?: string | null;
+}
+
+export interface RequestUploadUrlRequest {
+  name: string;
+  size: number;
+  contentType: string;
+}
+
+export interface RequestUploadUrlResponse {
+  uploadURL: string;
+  objectPath: string;
 }
 
 export interface Instruction {

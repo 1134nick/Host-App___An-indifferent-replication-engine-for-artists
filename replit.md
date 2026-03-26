@@ -90,6 +90,25 @@ Tables: `users`, `cohorts`, `applications`, `cohort_roles`, `rooms`, `room_membe
 - `GET /api/instructions` - My instructions
 - `POST /api/instructions` - Create instruction (admin)
 - `GET /api/admin/stats` - Admin stats
+- `POST /api/storage/uploads/request-url` - Request presigned GCS upload URL (auth required)
+- `GET /api/storage/objects/*` - Serve stored media objects
+- `GET /api/storage/public-objects/*` - Serve public assets
+
+## Media Messaging
+
+Members can send photos and voice messages in rooms. All identities remain hidden.
+
+- **Photo**: getUserMedia → canvas capture → JPEG blob → presigned URL upload → message with `mediaType: "image"`
+- **Voice**: MediaRecorder → webm blob → presigned URL upload → message with `mediaType: "audio"`
+- **Captions**: optional text alongside media
+- **Object storage**: Replit App Storage (GCS bucket), presigned PUT URLs, served back via `/api/storage/objects/*`
+
+## Anonymous Identity System
+
+- Each member has a persistent `maskedLabel` per room stored in `room_members.masked_label`
+- Labels format: `ADJECTIVE-NOUN-###` (e.g. `SILENT-CONDUIT-487`)
+- Assigned when user joins a room; backfilled automatically on first message if missing
+- Displayed as sender identity in all messages — user IDs never exposed
 
 ## Cohort Engine (`artifacts/api-server/src/lib/cohort-engine.ts`)
 

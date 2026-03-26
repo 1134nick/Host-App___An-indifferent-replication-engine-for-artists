@@ -214,9 +214,11 @@ export const GetRoomMessagesResponseItem = zod.object({
   id: zod.number(),
   roomId: zod.number(),
   userId: zod.number().nullish(),
-  content: zod.string(),
+  content: zod.string().nullish(),
   isSystemMessage: zod.boolean(),
   maskedSenderLabel: zod.string().nullish(),
+  mediaType: zod.enum(["image", "audio"]).nullish(),
+  mediaUrl: zod.string().nullish(),
   createdAt: zod.date(),
 });
 export const GetRoomMessagesResponse = zod.array(GetRoomMessagesResponseItem);
@@ -229,7 +231,9 @@ export const SendMessageParams = zod.object({
 });
 
 export const SendMessageBody = zod.object({
-  content: zod.string().min(1),
+  content: zod.string().nullish(),
+  mediaType: zod.enum(["image", "audio"]).nullish(),
+  mediaUrl: zod.string().nullish(),
 });
 
 /**
@@ -268,4 +272,18 @@ export const GetAdminStatsResponse = zod.object({
   activeCohorts: zod.number(),
   openCohortApplicants: zod.number(),
   spotsToFill: zod.number(),
+});
+
+/**
+ * @summary Request a presigned upload URL for media files
+ */
+export const RequestUploadUrlBody = zod.object({
+  name: zod.string(),
+  size: zod.number(),
+  contentType: zod.string(),
+});
+
+export const RequestUploadUrlResponse = zod.object({
+  uploadURL: zod.string(),
+  objectPath: zod.string(),
 });

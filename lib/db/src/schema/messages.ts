@@ -8,9 +8,11 @@ export const messagesTable = pgTable("messages", {
   id: serial("id").primaryKey(),
   roomId: integer("room_id").notNull().references(() => roomsTable.id),
   userId: integer("user_id").references(() => usersTable.id),
-  content: text("content").notNull(),
+  content: text("content").notNull().default(""),
   isSystemMessage: boolean("is_system_message").notNull().default(false),
   maskedSenderLabel: text("masked_sender_label"),
+  mediaType: text("media_type"), // 'image' | 'audio' | null
+  mediaUrl: text("media_url"),   // objectPath for stored media
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

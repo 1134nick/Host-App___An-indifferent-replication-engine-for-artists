@@ -5,13 +5,16 @@
  * Host App API - Members-only platform for artists
  * OpenAPI spec version: 0.1.0
  */
+import type { MessageMediaType } from "./messageMediaType";
 
 export interface Message {
   id: number;
   roomId: number;
   userId?: number | null;
-  content: string;
+  content?: string | null;
   isSystemMessage: boolean;
   maskedSenderLabel?: string | null;
+  mediaType?: MessageMediaType;
+  mediaUrl?: string | null;
   createdAt: Date;
 }
