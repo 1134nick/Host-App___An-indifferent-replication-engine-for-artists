@@ -92,31 +92,37 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
     const objectPath = `/objects/${wildcardPath}`;
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
-    // --- Protected route example (uncomment when using replit-auth) ---
-    // if (!req.isAuthenticated()) {
-    //   res.status(401).json({ error: "Unauthorized" });
-    //   return;
-    // }
-    // const canAccess = await objectStorageService.canAccessObjectEntity({
-    //   userId: req.user.id,
-    //   objectFile,
-    //   requestedPermission: ObjectPermission.READ,
-    // });
-    // if (!canAccess) {
-    //   res.status(403).json({ error: "Forbidden" });
-    //   return;
-    // }
+    const [metadata] = await objectFile.getMetadata();
+    const contentType = (metadata.contentType as string) || "application/octet-stream";
+    const fileSize = parseInt(String(metadata.size || 0), 10);
 
-    const response = await objectStorageService.downloadObject(objectFile);
+    const rangeHeader = req.headers.range;
+    if (rangeHeader && fileSize > 0) {
+      const parts = rangeHeader.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
 
-    res.status(response.status);
-    response.headers.forEach((value, key) => res.setHeader(key, value));
+      res.status(206);
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Length", chunkSize);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "private, max-age=3600");
 
-    if (response.body) {
-      const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
-      nodeStream.pipe(res);
+      const stream = objectFile.createReadStream({ start, end });
+      stream.pipe(res);
     } else {
-      res.end();
+      res.status(200);
+      res.setHeader("Content-Type", contentType);
+      if (fileSize > 0) {
+        res.setHeader("Content-Length", fileSize);
+      }
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "private, max-age=3600");
+
+      const stream = objectFile.createReadStream();
+      stream.pipe(res);
     }
   } catch (error) {
     if (error instanceof ObjectNotFoundError) {
