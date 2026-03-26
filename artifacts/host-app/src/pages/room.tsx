@@ -246,9 +246,9 @@ export default function Room() {
                   <Volume2 className="w-4 h-4 text-muted-foreground shrink-0" />
                   <audio
                     controls
+                    preload="metadata"
                     src={`/api/storage${msg.mediaUrl}`}
-                    className="h-8 opacity-60"
-                    style={{ filter: "invert(0.85) sepia(0.1)" }}
+                    className="max-w-full"
                   />
                 </div>
               )}
