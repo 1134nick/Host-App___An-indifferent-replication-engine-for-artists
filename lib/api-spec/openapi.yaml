@@ -571,25 +571,10 @@ components:
         age:
           type: integer
           minimum: 18
-        nationality:
-          type: string
-        profession:
-          type: string
-        educationalBackground:
-          type: string
-        personalityAnswers:
-          type: object
-          additionalProperties: true
-        skillTags:
-          type: array
-          items:
-            type: string
         artistStatement:
           type: string
       required:
         - age
-        - nationality
-        - profession
         - artistStatement
 
     Application:

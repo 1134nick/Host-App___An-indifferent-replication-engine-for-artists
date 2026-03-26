@@ -9,11 +9,7 @@ import { useEffect } from "react";
 
 const applicationInputSchema = z.object({
   age: z.coerce.number().min(18, "Must be 18+"),
-  nationality: z.string().min(2, "Required"),
-  profession: z.string().min(2, "Required"),
-  educationalBackground: z.string().optional(),
-  artistStatement: z.string().min(50, "Minimum 50 characters."),
-  skillTags: z.string().default(""),
+  artistStatement: z.string().min(10, "Minimum 10 characters."),
 });
 
 type ApplicationInput = z.infer<typeof applicationInputSchema>;
@@ -33,20 +29,12 @@ export default function Apply() {
     resolver: zodResolver(applicationInputSchema),
     defaultValues: {
       age: 18,
-      nationality: "",
-      profession: "",
-      educationalBackground: "",
       artistStatement: "",
-      skillTags: ""
     }
   });
 
   const onSubmit = (data: ApplicationInput) => {
-    const payload = {
-      ...data,
-      skillTags: data.skillTags.split(",").map(s => s.trim()).filter(Boolean),
-    };
-    submitApp.mutate({ data: payload }, {
+    submitApp.mutate({ data }, {
       onSuccess: () => {
         setLocation("/status");
       }
@@ -67,60 +55,18 @@ export default function Apply() {
       </div>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-10">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="space-y-2">
-            <label className="text-xs uppercase tracking-widest text-muted-foreground">Age</label>
-            <input
-              type="number"
-              {...form.register("age")}
-              className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
-            />
-            {form.formState.errors.age && <p className="text-xs text-destructive mt-1">{form.formState.errors.age.message}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs uppercase tracking-widest text-muted-foreground">Nationality</label>
-            <input
-              type="text"
-              {...form.register("nationality")}
-              className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
-            />
-            {form.formState.errors.nationality && <p className="text-xs text-destructive mt-1">{form.formState.errors.nationality.message}</p>}
-          </div>
-        </div>
-
         <div className="space-y-2">
-          <label className="text-xs uppercase tracking-widest text-muted-foreground">Profession</label>
+          <label className="text-xs uppercase tracking-widest text-muted-foreground">Age</label>
           <input
-            type="text"
-            {...form.register("profession")}
+            type="number"
+            {...form.register("age")}
             className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
           />
+          {form.formState.errors.age && <p className="text-xs text-destructive mt-1">{form.formState.errors.age.message}</p>}
         </div>
 
         <div className="space-y-2">
-          <label className="text-xs uppercase tracking-widest text-muted-foreground">Education (optional)</label>
-          <input
-            type="text"
-            {...form.register("educationalBackground")}
-            className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-xs uppercase tracking-widest text-muted-foreground">Skills (comma separated)</label>
-          <input
-            type="text"
-            {...form.register("skillTags")}
-            className="w-full bg-background border-b border-border px-0 py-2 text-sm focus:outline-none focus:border-primary transition-colors font-mono"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-xs uppercase tracking-widest text-muted-foreground flex items-center justify-between">
-            <span>Artist statement</span>
-            <span className="text-border text-[10px]">MIN 50 CHARS</span>
-          </label>
+          <label className="text-xs uppercase tracking-widest text-muted-foreground">Statement</label>
           <textarea
             {...form.register("artistStatement")}
             rows={6}

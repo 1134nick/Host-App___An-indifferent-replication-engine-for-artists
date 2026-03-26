@@ -7,10 +7,10 @@ import { getOrCreateOpenCohort, assignUserOnApplication } from "../lib/cohort-en
 const router = Router();
 
 router.post("/", requireAuth, async (req, res) => {
-  const { age, nationality, profession, educationalBackground, personalityAnswers, skillTags, artistStatement } = req.body;
+  const { age, artistStatement } = req.body;
 
-  if (!age || !nationality || !profession || !artistStatement) {
-    res.status(400).json({ error: "validation_error", message: "Age, nationality, profession, and artist statement are required" });
+  if (!age || !artistStatement) {
+    res.status(400).json({ error: "validation_error", message: "Age and statement are required" });
     return;
   }
 
@@ -32,11 +32,6 @@ router.post("/", requireAuth, async (req, res) => {
       cohortId: cohort.id,
       applicationOrder: newOrder,
       age: parseInt(age),
-      nationality,
-      profession,
-      educationalBackground: educationalBackground || null,
-      personalityAnswers: personalityAnswers || null,
-      skillTags: skillTags || [],
       artistStatement,
       status: "assigned",
     }).returning();

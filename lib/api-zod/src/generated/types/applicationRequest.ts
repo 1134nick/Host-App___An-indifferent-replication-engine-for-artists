@@ -5,15 +5,9 @@
  * Host App API - Members-only platform for artists
  * OpenAPI spec version: 0.1.0
  */
-import type { ApplicationRequestPersonalityAnswers } from "./applicationRequestPersonalityAnswers";
 
 export interface ApplicationRequest {
   /** @minimum 18 */
   age: number;
-  nationality: string;
-  profession: string;
-  educationalBackground?: string;
-  personalityAnswers?: ApplicationRequestPersonalityAnswers;
-  skillTags?: string[];
   artistStatement: string;
 }

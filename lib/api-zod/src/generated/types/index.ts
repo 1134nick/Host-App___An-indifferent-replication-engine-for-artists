@@ -9,7 +9,6 @@
 export * from "./adminStats";
 export * from "./application";
 export * from "./applicationRequest";
-export * from "./applicationRequestPersonalityAnswers";
 export * from "./applicationStatus";
 export * from "./applicationWithUser";
 export * from "./cohort";

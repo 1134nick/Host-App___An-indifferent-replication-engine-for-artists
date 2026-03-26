@@ -49,16 +49,9 @@ export interface LoginRequest {
   password: string;
 }
 
-export type ApplicationRequestPersonalityAnswers = { [key: string]: unknown };
-
 export interface ApplicationRequest {
   /** @minimum 18 */
   age: number;
-  nationality: string;
-  profession: string;
-  educationalBackground?: string;
-  personalityAnswers?: ApplicationRequestPersonalityAnswers;
-  skillTags?: string[];
   artistStatement: string;
 }
 

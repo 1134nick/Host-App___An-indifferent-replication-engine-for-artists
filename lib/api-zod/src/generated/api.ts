@@ -72,11 +72,6 @@ export const submitApplicationBodyAgeMin = 18;
 
 export const SubmitApplicationBody = zod.object({
   age: zod.number().min(submitApplicationBodyAgeMin),
-  nationality: zod.string(),
-  profession: zod.string(),
-  educationalBackground: zod.string().optional(),
-  personalityAnswers: zod.record(zod.string(), zod.unknown()).optional(),
-  skillTags: zod.array(zod.string()).optional(),
   artistStatement: zod.string(),
 });
 
