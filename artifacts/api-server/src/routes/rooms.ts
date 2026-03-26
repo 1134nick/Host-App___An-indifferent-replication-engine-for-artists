@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, roomsTable, roomMembersTable, messagesTable } from "@workspace/db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { generateMaskedLabel } from "../lib/cohort-engine";
 import { requireAuth } from "../lib/auth";
 
@@ -50,9 +50,10 @@ router.get("/:roomId/messages", requireAuth, async (req, res) => {
 
     if (!membership) { res.status(403).json({ error: "forbidden", message: "No access to this room" }); return; }
 
+    const thirtyMinAgo = sql`now() - interval '30 minutes'`;
     const messages = await db.select()
       .from(messagesTable)
-      .where(eq(messagesTable.roomId, roomId))
+      .where(and(eq(messagesTable.roomId, roomId), gte(messagesTable.createdAt, thirtyMinAgo)))
       .orderBy(desc(messagesTable.createdAt))
       .limit(limit)
       .offset(offset);

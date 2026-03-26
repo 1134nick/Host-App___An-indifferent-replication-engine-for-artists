@@ -31,7 +31,19 @@ function BlobAudioPlayer({ src }: { src: string }) {
     try {
       const resp = await fetch(src);
       if (!resp.ok) throw new Error("fetch failed");
-      const blob = await resp.blob();
+      const arrayBuf = await resp.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuf);
+      let detectedType = resp.headers.get("content-type") || "audio/webm";
+      if (bytes.length > 8) {
+        if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
+          detectedType = "audio/webm";
+        } else if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+          detectedType = "audio/mp4";
+        } else if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
+          detectedType = "audio/ogg";
+        }
+      }
+      const blob = new Blob([arrayBuf], { type: detectedType });
       const url = URL.createObjectURL(blob);
       setBlobUrl(url);
     } catch {
@@ -60,16 +72,31 @@ function BlobAudioPlayer({ src }: { src: string }) {
     const audio = new Audio(blobUrl);
     audioRef.current = audio;
 
-    audio.addEventListener("loadedmetadata", () => setDuration(audio.duration));
-    audio.addEventListener("timeupdate", () => setProgress(audio.currentTime));
-    audio.addEventListener("play", () => setPlaying(true));
-    audio.addEventListener("pause", () => setPlaying(false));
-    audio.addEventListener("ended", () => { setPlaying(false); setProgress(0); });
-    audio.addEventListener("error", () => setError(true));
+    const onMeta = () => setDuration(audio.duration);
+    const onTime = () => setProgress(audio.currentTime);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onEnd = () => { setPlaying(false); setProgress(0); };
+    const onErr = () => {
+      if (audio.networkState === audio.NETWORK_NO_SOURCE) setError(true);
+    };
+
+    audio.addEventListener("loadedmetadata", onMeta);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
+    audio.addEventListener("ended", onEnd);
+    audio.addEventListener("error", onErr);
 
     audio.play().catch(() => {});
 
     return () => {
+      audio.removeEventListener("loadedmetadata", onMeta);
+      audio.removeEventListener("timeupdate", onTime);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("ended", onEnd);
+      audio.removeEventListener("error", onErr);
       audio.pause();
       audio.src = "";
     };
@@ -227,11 +254,16 @@ export default function Room() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       streamRef.current = stream;
       audioChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
+      const mimeOptions = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+      const supportedMime = mimeOptions.find(m => MediaRecorder.isTypeSupported(m)) || "";
+      const recorder = supportedMime
+        ? new MediaRecorder(stream, { mimeType: supportedMime })
+        : new MediaRecorder(stream);
+      const actualMime = recorder.mimeType || supportedMime || "audio/webm";
       mediaRecorderRef.current = recorder;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       recorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const blob = new Blob(audioChunksRef.current, { type: actualMime });
         setCapturedAudio(blob);
         stopStream();
       };
@@ -255,8 +287,9 @@ export default function Room() {
     setIsUploading(true);
     setError(null);
     try {
-      const ext = mediaType === "image" ? "jpg" : "webm";
-      const mime = mediaBlob.type || (mediaType === "image" ? "image/jpeg" : "audio/webm");
+      const isAudio = mediaType === "audio";
+      const mime = mediaBlob.type || (isAudio ? "audio/webm" : "image/jpeg");
+      const ext = isAudio ? (mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm") : "jpg";
       const urlData = await requestUploadUrlMutation.mutateAsync({
         data: {
           name: `capture.${ext}`,
