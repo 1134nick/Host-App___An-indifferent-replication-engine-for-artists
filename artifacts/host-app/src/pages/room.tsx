@@ -234,7 +234,7 @@ export default function Room() {
               {msg.mediaType === "image" && msg.mediaUrl && (
                 <div className="mt-2">
                   <img
-                    src={`/api/storage/objects${msg.mediaUrl}`}
+                    src={`/api/storage${msg.mediaUrl}`}
                     alt="Transmitted image"
                     className="max-w-xs max-h-64 object-contain border border-border/50"
                     loading="lazy"
@@ -246,7 +246,7 @@ export default function Room() {
                   <Volume2 className="w-4 h-4 text-muted-foreground shrink-0" />
                   <audio
                     controls
-                    src={`/api/storage/objects${msg.mediaUrl}`}
+                    src={`/api/storage${msg.mediaUrl}`}
                     className="h-8 opacity-60"
                     style={{ filter: "invert(0.85) sepia(0.1)" }}
                   />
