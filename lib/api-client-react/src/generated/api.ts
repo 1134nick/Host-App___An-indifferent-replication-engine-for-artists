@@ -25,6 +25,7 @@ import type {
   CohortProcessResult,
   CohortStatus,
   CreateInstructionRequest,
+  DeleteMessage200,
   ErrorResponse,
   GetRoomMessagesParams,
   HealthStatus,
@@ -1245,6 +1246,91 @@ export const useSendMessage = <
   TContext
 > => {
   return useMutation(getSendMessageMutationOptions(options));
+};
+
+/**
+ * @summary Delete a message (own messages only)
+ */
+export const getDeleteMessageUrl = (roomId: number, messageId: number) => {
+  return `/api/rooms/${roomId}/messages/${messageId}`;
+};
+
+export const deleteMessage = async (
+  roomId: number,
+  messageId: number,
+  options?: RequestInit,
+): Promise<DeleteMessage200> => {
+  return customFetch<DeleteMessage200>(getDeleteMessageUrl(roomId, messageId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteMessageMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteMessage>>,
+    TError,
+    { roomId: number; messageId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteMessage>>,
+  TError,
+  { roomId: number; messageId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteMessage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteMessage>>,
+    { roomId: number; messageId: number }
+  > = (props) => {
+    const { roomId, messageId } = props ?? {};
+
+    return deleteMessage(roomId, messageId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteMessage>>
+>;
+
+export type DeleteMessageMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Delete a message (own messages only)
+ */
+export const useDeleteMessage = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteMessage>>,
+    TError,
+    { roomId: number; messageId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteMessage>>,
+  TError,
+  { roomId: number; messageId: number },
+  TContext
+> => {
+  return useMutation(getDeleteMessageMutationOptions(options));
 };
 
 /**

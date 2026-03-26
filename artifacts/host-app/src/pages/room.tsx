@@ -4,10 +4,12 @@ import {
   useSendMessage,
   useGetMyRole,
   useRequestUploadUrl,
+  useDeleteMessage,
+  useGetMe,
 } from "@workspace/api-client-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, Play, Pause, Loader2 } from "lucide-react";
+import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, Play, Pause, Loader2, Trash2, Video } from "lucide-react";
 
 function BlobAudioPlayer({ src }: { src: string }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -156,13 +158,15 @@ function BlobAudioPlayer({ src }: { src: string }) {
         />
       </div>
       <span className="text-xs shrink-0" style={{ color: "#999", fontFamily: "var(--font-mono)" }}>
-        {duration > 0 ? formatTime(playing ? progress : duration) : "0:00"}
+        {duration > 0 ? `${formatTime(progress)} / ${formatTime(duration)}` : "0:00"}
       </span>
     </div>
   );
 }
 
-type MediaMode = "none" | "camera" | "recording";
+type MediaMode = "none" | "camera" | "recording" | "video-recording";
+
+const MAX_VIDEO_SECONDS = 20;
 
 export default function Room() {
   const { id } = useParams();
@@ -172,14 +176,17 @@ export default function Room() {
     query: { refetchInterval: 3000 },
   });
   const { data: role } = useGetMyRole();
+  const { data: me } = useGetMe();
   const sendMessageMutation = useSendMessage();
   const requestUploadUrlMutation = useRequestUploadUrl();
+  const deleteMessageMutation = useDeleteMessage();
   const queryClient = useQueryClient();
 
   const [content, setContent] = useState("");
   const [mediaMode, setMediaMode] = useState<MediaMode>("none");
   const [capturedPhoto, setCapturedPhoto] = useState<Blob | null>(null);
   const [capturedAudio, setCapturedAudio] = useState<Blob | null>(null);
+  const [capturedVideo, setCapturedVideo] = useState<Blob | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -191,7 +198,9 @@ export default function Room() {
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
+  const videoChunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -203,13 +212,20 @@ export default function Room() {
   }, []);
 
   const clearCaptures = useCallback(() => {
+    cancelledRef.current = true;
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+    mediaRecorderRef.current = null;
     setCapturedPhoto(null);
     setCapturedAudio(null);
+    setCapturedVideo(null);
     setMediaMode("none");
     setIsRecording(false);
     setRecordingSeconds(0);
     if (timerRef.current) clearInterval(timerRef.current);
     stopStream();
+    setTimeout(() => { cancelledRef.current = false; }, 50);
   }, [stopStream]);
 
   useEffect(() => () => { stopStream(); if (timerRef.current) clearInterval(timerRef.current); }, [stopStream]);
@@ -261,8 +277,10 @@ export default function Room() {
         : new MediaRecorder(stream);
       const actualMime = recorder.mimeType || supportedMime || "audio/webm";
       mediaRecorderRef.current = recorder;
+      cancelledRef.current = false;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       recorder.onstop = () => {
+        if (cancelledRef.current) return;
         const blob = new Blob(audioChunksRef.current, { type: actualMime });
         setCapturedAudio(blob);
         stopStream();
@@ -283,13 +301,77 @@ export default function Room() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
 
-  const uploadAndSend = useCallback(async (mediaBlob: Blob, mediaType: "image" | "audio") => {
+  const startVideoRecording = useCallback(async () => {
+    setError(null);
+    clearCaptures();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
+      streamRef.current = stream;
+      setMediaMode("video-recording");
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play();
+        }
+      }, 100);
+
+      videoChunksRef.current = [];
+      const videoMimeOptions = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
+      const supportedMime = videoMimeOptions.find(m => MediaRecorder.isTypeSupported(m)) || "";
+      const recorder = supportedMime
+        ? new MediaRecorder(stream, { mimeType: supportedMime })
+        : new MediaRecorder(stream);
+      const actualMime = recorder.mimeType || supportedMime || "video/webm";
+      mediaRecorderRef.current = recorder;
+      cancelledRef.current = false;
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) videoChunksRef.current.push(e.data); };
+      recorder.onstop = () => {
+        if (cancelledRef.current) return;
+        const blob = new Blob(videoChunksRef.current, { type: actualMime });
+        setCapturedVideo(blob);
+        stopStream();
+      };
+      recorder.start(250);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      timerRef.current = setInterval(() => {
+        setRecordingSeconds((s) => {
+          if (s + 1 >= MAX_VIDEO_SECONDS) {
+            mediaRecorderRef.current?.stop();
+            setIsRecording(false);
+            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+          }
+          return s + 1;
+        });
+      }, 1000);
+    } catch {
+      setError("Camera/mic access denied.");
+    }
+  }, [clearCaptures, stopStream]);
+
+  const stopVideoRecording = useCallback(() => {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  }, []);
+
+  const handleDeleteMessage = useCallback((messageId: number) => {
+    deleteMessageMutation.mutate(
+      { roomId, messageId },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: [`/api/rooms/${roomId}/messages`] });
+        },
+      },
+    );
+  }, [roomId, deleteMessageMutation, queryClient]);
+
+  const uploadAndSend = useCallback(async (mediaBlob: Blob, mediaType: "image" | "audio" | "video") => {
     setIsUploading(true);
     setError(null);
     try {
-      const isAudio = mediaType === "audio";
-      const mime = mediaBlob.type || (isAudio ? "audio/webm" : "image/jpeg");
-      const ext = isAudio ? (mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm") : "jpg";
+      const mime = mediaBlob.type || (mediaType === "audio" ? "audio/webm" : mediaType === "video" ? "video/webm" : "image/jpeg");
+      const ext = mediaType === "image" ? "jpg" : mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
       const urlData = await requestUploadUrlMutation.mutateAsync({
         data: {
           name: `capture.${ext}`,
@@ -338,6 +420,7 @@ export default function Room() {
     e.preventDefault();
     if (capturedPhoto) { uploadAndSend(capturedPhoto, "image"); return; }
     if (capturedAudio) { uploadAndSend(capturedAudio, "audio"); return; }
+    if (capturedVideo) { uploadAndSend(capturedVideo, "video"); return; }
     if (!content.trim()) return;
     sendMessageMutation.mutate(
       { roomId, data: { content } },
@@ -355,7 +438,7 @@ export default function Room() {
   }
 
   const isPeripheral = role?.roleType === "peripheral";
-  const hasPending = !!capturedPhoto || !!capturedAudio;
+  const hasPending = !!capturedPhoto || !!capturedAudio || !!capturedVideo;
   const isBusy = sendMessageMutation.isPending || isUploading;
 
   return (
@@ -378,6 +461,7 @@ export default function Room() {
         )}
         {messages?.map((msg) => {
           const isSystem = msg.isSystemMessage;
+          const isOwn = me?.id != null && msg.userId === me.id;
           return (
             <div
               key={msg.id}
@@ -387,7 +471,18 @@ export default function Room() {
                 <span className="font-medium tracking-wider">
                   {isSystem ? "SYSTEM" : (msg.maskedSenderLabel || "UNKNOWN")}
                 </span>
-                <span>{new Date(msg.createdAt).toLocaleTimeString()}</span>
+                <div className="flex items-center gap-2">
+                  <span>{new Date(msg.createdAt).toLocaleTimeString()}</span>
+                  {isOwn && !isSystem && (
+                    <button
+                      onClick={() => handleDeleteMessage(msg.id)}
+                      className="text-muted-foreground hover:text-destructive transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
               </div>
               {msg.content && <p className="whitespace-pre-wrap text-foreground mb-2">{msg.content}</p>}
               {msg.mediaType === "image" && msg.mediaUrl && (
@@ -402,6 +497,16 @@ export default function Room() {
               )}
               {msg.mediaType === "audio" && msg.mediaUrl && (
                 <BlobAudioPlayer src={`/api/storage${msg.mediaUrl}`} />
+              )}
+              {msg.mediaType === "video" && msg.mediaUrl && (
+                <div className="mt-2">
+                  <video
+                    src={`/api/storage${msg.mediaUrl}`}
+                    controls
+                    preload="metadata"
+                    className="max-w-xs max-h-64 border border-border/50"
+                  />
+                </div>
               )}
             </div>
           );
@@ -437,7 +542,31 @@ export default function Room() {
         </div>
       )}
 
-      {mediaMode !== "camera" && <canvas ref={canvasRef} className="hidden" />}
+      {mediaMode === "video-recording" && !capturedVideo && (
+        <div className="shrink-0 mb-4 relative border border-border bg-black">
+          <video ref={videoRef} className="w-full max-h-48 object-cover" muted playsInline />
+          <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-black/70 px-2 py-1 rounded">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-xs font-mono text-white">{recordingSeconds}s / {MAX_VIDEO_SECONDS}s</span>
+          </div>
+          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-4">
+            <button
+              onClick={stopVideoRecording}
+              className="px-6 py-2 border border-foreground text-foreground font-medium text-xs uppercase tracking-widest hover:bg-foreground hover:text-background transition-colors"
+            >
+              Stop
+            </button>
+            <button
+              onClick={clearCaptures}
+              className="px-4 py-2 border border-border text-xs font-mono uppercase text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!["camera", "video-recording"].includes(mediaMode) && <canvas ref={canvasRef} className="hidden" />}
 
       {capturedPhoto && (
         <div className="shrink-0 mb-4 relative border border-border bg-card flex items-center gap-3 px-3 py-2">
@@ -454,24 +583,43 @@ export default function Room() {
         </div>
       )}
 
-      {(isRecording || capturedAudio) && (
+      {capturedVideo && (
+        <div className="shrink-0 mb-4 relative border border-border bg-card flex items-center gap-3 px-3 py-2">
+          <Video className="w-4 h-4 text-muted-foreground shrink-0" />
+          <video
+            src={URL.createObjectURL(capturedVideo)}
+            className="h-16 w-24 object-cover border border-border/50"
+            muted
+          />
+          <span className="text-xs font-mono text-muted-foreground flex-1 lowercase">video ready</span>
+          <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {mediaMode === "recording" && (
         <div className="shrink-0 mb-4 border border-border bg-card flex items-center gap-3 px-3 py-2">
-          <span className={`w-2 h-2 rounded-full shrink-0 ${isRecording ? "bg-red-500 animate-pulse" : "bg-muted-foreground"}`} />
+          <span className="w-2 h-2 rounded-full shrink-0 bg-red-500 animate-pulse" />
           <span className="text-xs font-mono text-muted-foreground flex-1 lowercase">
-            {isRecording ? `recording ${recordingSeconds}s` : "voice ready"}
+            recording {recordingSeconds}s
           </span>
-          {isRecording ? (
-            <button
-              onClick={stopRecording}
-              className="px-4 py-1 border border-destructive/50 text-destructive text-xs font-mono uppercase hover:bg-destructive/10"
-            >
-              Stop
-            </button>
-          ) : (
-            <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
-              <X className="w-4 h-4" />
-            </button>
-          )}
+          <button
+            onClick={stopRecording}
+            className="px-4 py-1 border border-destructive/50 text-destructive text-xs font-mono uppercase hover:bg-destructive/10"
+          >
+            Stop
+          </button>
+        </div>
+      )}
+
+      {capturedAudio && !isRecording && (
+        <div className="shrink-0 mb-4 border border-border bg-card flex items-center gap-3 px-3 py-2">
+          <span className="w-2 h-2 rounded-full shrink-0 bg-muted-foreground" />
+          <span className="text-xs font-mono text-muted-foreground flex-1 lowercase">voice ready</span>
+          <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -487,18 +635,26 @@ export default function Room() {
                 <button
                   type="button"
                   onClick={mediaMode === "camera" ? clearCaptures : openCamera}
-                  title="Camera"
+                  title="Photo"
                   className="p-2 text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Camera className="w-5 h-5" />
                 </button>
                 <button
                   type="button"
-                  onClick={isRecording ? stopRecording : startRecording}
-                  title={isRecording ? "Stop recording" : "Record voice"}
-                  className={`p-2 transition-colors ${isRecording ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
+                  onClick={mediaMode === "video-recording" ? stopVideoRecording : startVideoRecording}
+                  title={mediaMode === "video-recording" ? "Stop video" : "Record video"}
+                  className={`p-2 transition-colors ${mediaMode === "video-recording" ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
                 >
-                  {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                  <Video className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={isRecording && mediaMode === "recording" ? stopRecording : startRecording}
+                  title={isRecording && mediaMode === "recording" ? "Stop recording" : "Record voice"}
+                  className={`p-2 transition-colors ${isRecording && mediaMode === "recording" ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {isRecording && mediaMode === "recording" ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                 </button>
               </>
             )}

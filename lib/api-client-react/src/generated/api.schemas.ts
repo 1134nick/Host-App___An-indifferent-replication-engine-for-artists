@@ -169,6 +169,7 @@ export type MessageMediaType =
 export const MessageMediaType = {
   image: "image",
   audio: "audio",
+  video: "video",
 } as const;
 
 export interface Message {
@@ -190,6 +191,7 @@ export type SendMessageRequestMediaType =
 export const SendMessageRequestMediaType = {
   image: "image",
   audio: "audio",
+  video: "video",
 } as const;
 
 export interface SendMessageRequest {
@@ -238,4 +240,8 @@ export interface AdminStats {
 export type GetRoomMessagesParams = {
   limit?: number;
   offset?: number;
+};
+
+export type DeleteMessage200 = {
+  success?: boolean;
 };

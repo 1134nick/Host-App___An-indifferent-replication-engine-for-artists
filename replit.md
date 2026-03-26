@@ -88,6 +88,7 @@ Tables: `users`, `cohorts`, `applications`, `cohort_roles`, `rooms`, `room_membe
 - `GET /api/rooms` - My accessible rooms
 - `GET /api/rooms/:id/messages` - Room messages
 - `POST /api/rooms/:id/messages` - Send message
+- `DELETE /api/rooms/:roomId/messages/:messageId` - Delete own message
 - `GET /api/instructions` - My instructions
 - `POST /api/instructions` - Create instruction (admin)
 - `GET /api/admin/stats` - Admin stats
@@ -97,12 +98,16 @@ Tables: `users`, `cohorts`, `applications`, `cohort_roles`, `rooms`, `room_membe
 
 ## Media Messaging
 
-Members can send photos and voice messages in rooms. All identities remain hidden.
+Members can send photos, voice messages, and short videos in rooms. All identities remain hidden.
 
 - **Photo**: getUserMedia → canvas capture → JPEG blob → presigned URL upload → message with `mediaType: "image"`
-- **Voice**: MediaRecorder → webm blob → presigned URL upload → message with `mediaType: "audio"`
+- **Voice**: MediaRecorder → auto-detected MIME (webm/mp4/ogg) → presigned URL upload → message with `mediaType: "audio"`
+- **Video**: getUserMedia (video+audio) → MediaRecorder with 20s limit → presigned URL upload → message with `mediaType: "video"`
 - **Captions**: optional text alongside media
-- **Object storage**: Replit App Storage (GCS bucket), presigned PUT URLs, served back via `/api/storage/objects/*`
+- **Delete**: users can delete their own messages via `DELETE /api/rooms/:roomId/messages/:messageId`
+- **Auto-expiry**: messages older than 30 minutes are automatically purged (cleanup runs every 60s; query also filters)
+- **Object storage**: Replit App Storage (GCS bucket), presigned PUT URLs, served back via `/api/storage/objects/*` with Range request support
+- **Audio playback**: BlobAudioPlayer component fetches audio as blob, detects format from magic bytes (MP4/WebM/OGG), creates blob URL for reliable playback
 
 ## Anonymous Identity System
 

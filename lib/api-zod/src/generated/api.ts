@@ -217,7 +217,7 @@ export const GetRoomMessagesResponseItem = zod.object({
   content: zod.string().nullish(),
   isSystemMessage: zod.boolean(),
   maskedSenderLabel: zod.string().nullish(),
-  mediaType: zod.enum(["image", "audio"]).nullish(),
+  mediaType: zod.enum(["image", "audio", "video"]).nullish(),
   mediaUrl: zod.string().nullish(),
   createdAt: zod.date(),
 });
@@ -232,8 +232,20 @@ export const SendMessageParams = zod.object({
 
 export const SendMessageBody = zod.object({
   content: zod.string().nullish(),
-  mediaType: zod.enum(["image", "audio"]).nullish(),
+  mediaType: zod.enum(["image", "audio", "video"]).nullish(),
   mediaUrl: zod.string().nullish(),
+});
+
+/**
+ * @summary Delete a message (own messages only)
+ */
+export const DeleteMessageParams = zod.object({
+  roomId: zod.coerce.number(),
+  messageId: zod.coerce.number(),
+});
+
+export const DeleteMessageResponse = zod.object({
+  success: zod.boolean().optional(),
 });
 
 /**

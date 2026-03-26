@@ -13,4 +13,5 @@ export type MessageMediaType =
 export const MessageMediaType = {
   image: "image",
   audio: "audio",
+  video: "video",
 } as const;

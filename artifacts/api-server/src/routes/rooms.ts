@@ -78,8 +78,8 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
   }
 
   // Validate mediaType if provided
-  if (mediaType && !["image", "audio"].includes(mediaType)) {
-    res.status(400).json({ error: "validation_error", message: "mediaType must be image or audio" });
+  if (mediaType && !["image", "audio", "video"].includes(mediaType)) {
+    res.status(400).json({ error: "validation_error", message: "mediaType must be image, audio, or video" });
     return;
   }
 
@@ -115,6 +115,50 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error sending message");
     res.status(500).json({ error: "internal_error", message: "Failed to send message" });
+  }
+});
+
+router.delete("/:roomId/messages/:messageId", requireAuth, async (req, res) => {
+  const roomId = parseInt(req.params.roomId);
+  const messageId = parseInt(req.params.messageId);
+  if (isNaN(roomId) || isNaN(messageId)) {
+    res.status(400).json({ error: "validation_error", message: "Invalid IDs" });
+    return;
+  }
+
+  try {
+    const [membership] = await db.select()
+      .from(roomMembersTable)
+      .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)))
+      .limit(1);
+
+    if (!membership) {
+      res.status(403).json({ error: "forbidden", message: "No access to this room" });
+      return;
+    }
+
+    const [message] = await db.select()
+      .from(messagesTable)
+      .where(and(eq(messagesTable.id, messageId), eq(messagesTable.roomId, roomId)))
+      .limit(1);
+
+    if (!message) {
+      res.status(404).json({ error: "not_found", message: "Message not found" });
+      return;
+    }
+
+    if (message.userId !== req.session.userId) {
+      res.status(403).json({ error: "forbidden", message: "You can only delete your own messages" });
+      return;
+    }
+
+    await db.delete(messagesTable)
+      .where(eq(messagesTable.id, messageId));
+
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting message");
+    res.status(500).json({ error: "internal_error", message: "Failed to delete message" });
   }
 });
 
