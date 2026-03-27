@@ -84,8 +84,14 @@ router.post("/login", async (req, res) => {
 
   try {
     const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.toLowerCase())).limit(1);
+
     if (!user) {
       res.status(401).json({ error: "invalid_credentials", message: "Invalid email or password" });
+      return;
+    }
+
+    if (user.status !== "active") {
+      res.status(403).json({ error: "forbidden", message: "Account is not active" });
       return;
     }
 
@@ -98,14 +104,22 @@ router.post("/login", async (req, res) => {
     req.session.userId = user.id;
     req.session.isAdmin = user.isAdmin;
 
-    res.json({
-      id: user.id,
-      email: user.email,
-      displayName: user.displayName,
-      pseudonym: user.pseudonym,
-      isAdmin: user.isAdmin,
-      status: user.status,
-      createdAt: user.createdAt,
+    req.session.save((err) => {
+      if (err) {
+        req.log.error({ err }, "Error saving session");
+        res.status(500).json({ error: "internal_error", message: "Failed to create session" });
+        return;
+      }
+
+      res.json({
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        pseudonym: user.pseudonym,
+        isAdmin: user.isAdmin,
+        status: user.status,
+        createdAt: user.createdAt,
+      });
     });
   } catch (err) {
     req.log.error({ err }, "Error logging in");
