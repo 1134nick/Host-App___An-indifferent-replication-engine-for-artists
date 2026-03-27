@@ -470,14 +470,13 @@ export default function Room() {
         setTransitioning(true);
         setTimeout(() => {
           setContinuousHead(nextId);
-          addActiveMedia(nextId);
           setTransitioning(false);
         }, 600);
       } else {
         setContinuousHead(null);
       }
     }
-  }, [playbackMode, continuousHead, mediaMessages, removeActiveMedia, addActiveMedia]);
+  }, [playbackMode, continuousHead, mediaMessages, removeActiveMedia]);
 
   const handleMediaPlay = useCallback((msgId: number) => {
     addActiveMedia(msgId);
@@ -736,11 +735,9 @@ export default function Room() {
   const playAll = useCallback(() => {
     if (mediaMessages.length > 0) {
       setPlaybackMode("continuous");
-      const firstId = mediaMessages[0].id;
-      setContinuousHead(firstId);
-      addActiveMedia(firstId);
+      setContinuousHead(mediaMessages[0].id);
     }
-  }, [mediaMessages, addActiveMedia]);
+  }, [mediaMessages]);
 
   const stopAll = useCallback(() => {
     setActiveMediaIds(new Set());
