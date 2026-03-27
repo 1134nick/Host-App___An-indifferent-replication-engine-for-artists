@@ -10,16 +10,14 @@ import {
 } from "@workspace/api-client-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Video, Radio, Zap } from "lucide-react";
+import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Video } from "lucide-react";
 import { fetchAndDecode, createEchoNode, getAudioContext, type EchoNode } from "../lib/audio-engine";
 import Waveform from "../components/waveform";
 import AmbientDrone from "../components/ambient-drone";
 
-type PlaybackMode = "single" | "continuous";
 
 function BlobAudioPlayer({
   src,
-  onEnded,
   onPlay,
   onStop,
   autoPlay,
@@ -32,7 +30,6 @@ function BlobAudioPlayer({
   onAnalyser,
 }: {
   src: string;
-  onEnded?: () => void;
   onPlay?: () => void;
   onStop?: () => void;
   autoPlay?: boolean;
@@ -56,14 +53,22 @@ function BlobAudioPlayer({
   const rafRef = useRef<number>(0);
   const loadedRef = useRef(false);
 
-  const onEndedRef = useRef(onEnded);
   const onPlayRef = useRef(onPlay);
   const onStopRef = useRef(onStop);
   const onAnalyserRef = useRef(onAnalyser);
-  onEndedRef.current = onEnded;
+  const playbackRateRef = useRef(playbackRate);
+  const distortionAmountRef = useRef(distortionAmount);
+  const delayTimeRef = useRef(delayTime);
+  const delayFeedbackRef = useRef(delayFeedback);
+  const mutedRef = useRef(muted);
   onPlayRef.current = onPlay;
   onStopRef.current = onStop;
   onAnalyserRef.current = onAnalyser;
+  playbackRateRef.current = playbackRate;
+  distortionAmountRef.current = distortionAmount;
+  delayTimeRef.current = delayTime;
+  delayFeedbackRef.current = delayFeedback;
+  mutedRef.current = muted;
 
   const cleanup = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -109,26 +114,26 @@ function BlobAudioPlayer({
       if (!buf) return;
 
       const node = createEchoNode(buf, {
-        playbackRate,
-        distortionAmount,
-        delayTime,
-        delayFeedback,
+        playbackRate: playbackRateRef.current,
+        distortionAmount: distortionAmountRef.current,
+        delayTime: delayTimeRef.current,
+        delayFeedback: delayFeedbackRef.current,
       });
       echoNodeRef.current = node;
-      node.gain.gain.value = muted ? 0 : 1;
+      node.gain.gain.value = mutedRef.current ? 0 : 1;
       onAnalyserRef.current?.(node.analyser);
 
       const ac = getAudioContext();
       startTimeRef.current = ac.currentTime;
       offsetRef.current = fromOffset;
 
+      node.source.loop = true;
       node.source.onended = () => {
         setPlaying(false);
         setProgress(0);
         offsetRef.current = 0;
         onAnalyserRef.current?.(null);
         onStopRef.current?.();
-        onEndedRef.current?.();
       };
 
       node.source.start(0, fromOffset);
@@ -138,24 +143,25 @@ function BlobAudioPlayer({
       const tick = () => {
         if (!echoNodeRef.current) return;
         const ac2 = getAudioContext();
-        const elapsed = (ac2.currentTime - startTimeRef.current) * playbackRate + fromOffset;
-        setProgress(Math.min(elapsed, buf.duration));
+        const elapsed = (ac2.currentTime - startTimeRef.current) * (echoNodeRef.current.source.playbackRate.value || 1) + fromOffset;
+        const looped = buf.duration > 0 ? elapsed % buf.duration : elapsed;
+        setProgress(Math.min(looped, buf.duration));
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
     } catch {}
-  }, [cleanup, loadBuffer, playbackRate, distortionAmount, delayTime, delayFeedback, muted]);
+  }, [cleanup, loadBuffer]);
 
   const stopPlayback = useCallback(() => {
     if (echoNodeRef.current) {
       const ac = getAudioContext();
-      const elapsed = (ac.currentTime - startTimeRef.current) * playbackRate + offsetRef.current;
+      const elapsed = (ac.currentTime - startTimeRef.current) * (echoNodeRef.current.source.playbackRate.value || 1) + offsetRef.current;
       offsetRef.current = elapsed;
     }
     cleanup();
     setPlaying(false);
     onStopRef.current?.();
-  }, [cleanup, playbackRate]);
+  }, [cleanup]);
 
   const togglePlay = useCallback(async () => {
     try {
@@ -290,7 +296,6 @@ function BlobAudioPlayer({
 
 function EchoVideo({
   src,
-  onEnded,
   onPlay,
   onStop,
   autoPlay,
@@ -302,7 +307,6 @@ function EchoVideo({
   delayFeedback,
 }: {
   src: string;
-  onEnded?: () => void;
   onPlay?: () => void;
   onStop?: () => void;
   autoPlay?: boolean;
@@ -315,27 +319,48 @@ function EchoVideo({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
+  const [videoError, setVideoError] = useState(false);
+  const seekingRef = useRef(false);
+  const externalStopRef = useRef(false);
 
   const onPlayRef = useRef(onPlay);
   const onStopRef = useRef(onStop);
-  const onEndedRef = useRef(onEnded);
   onPlayRef.current = onPlay;
   onStopRef.current = onStop;
-  onEndedRef.current = onEnded;
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const handlePlay = () => { setPlaying(true); onPlayRef.current?.(); };
-    const handlePause = () => { setPlaying(false); onStopRef.current?.(); };
-    const handleEnd = () => { setPlaying(false); onStopRef.current?.(); onEndedRef.current?.(); };
+    const handlePlay = () => {
+      setPlaying(true);
+      setVideoError(false);
+      onPlayRef.current?.();
+    };
+    const handlePause = () => {
+      if (seekingRef.current) return;
+      if (externalStopRef.current) {
+        externalStopRef.current = false;
+        setPlaying(false);
+        onStopRef.current?.();
+        return;
+      }
+      setPlaying(false);
+      onStopRef.current?.();
+    };
+    const handleSeeking = () => { seekingRef.current = true; };
+    const handleSeeked = () => { seekingRef.current = false; };
+    const handleError = () => { setVideoError(true); setPlaying(false); };
     v.addEventListener("play", handlePlay);
     v.addEventListener("pause", handlePause);
-    v.addEventListener("ended", handleEnd);
+    v.addEventListener("seeking", handleSeeking);
+    v.addEventListener("seeked", handleSeeked);
+    v.addEventListener("error", handleError);
     return () => {
       v.removeEventListener("play", handlePlay);
       v.removeEventListener("pause", handlePause);
-      v.removeEventListener("ended", handleEnd);
+      v.removeEventListener("seeking", handleSeeking);
+      v.removeEventListener("seeked", handleSeeked);
+      v.removeEventListener("error", handleError);
     };
   }, [src]);
 
@@ -350,8 +375,8 @@ function EchoVideo({
 
   useEffect(() => {
     if (!isActive && playingRef.current && videoRef.current) {
+      externalStopRef.current = true;
       videoRef.current.pause();
-      videoRef.current.currentTime = 0;
     }
   }, [isActive]);
 
@@ -379,12 +404,22 @@ function EchoVideo({
       ].filter(Boolean).join(" ") || "none"
     : "none";
 
+  if (videoError) {
+    return (
+      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <Video className="w-4 h-4" />
+        <span>video unavailable</span>
+      </div>
+    );
+  }
+
   return (
     <div className={`mt-2 ${playing ? "scanlines" : ""}`}>
       <video
         ref={videoRef}
         src={src}
         controls
+        loop
         preload="metadata"
         playsInline
         muted={muted}
@@ -404,7 +439,6 @@ function EchoVideo({
 type MediaMode = "none" | "camera" | "recording" | "video-recording";
 
 const MAX_VIDEO_SECONDS = 20;
-const TRACK_OPTIONS = [1, 2, 3, Infinity] as const;
 
 export default function Room() {
   const { id } = useParams();
@@ -432,10 +466,9 @@ export default function Room() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("single");
   const [activeMediaIds, setActiveMediaIds] = useState<Set<number>>(new Set());
   const [mutedIds, setMutedIds] = useState<Set<number>>(new Set());
-  const [maxTracks, setMaxTracks] = useState<number>(Infinity);
+  const [maxTracks] = useState<number>(Infinity);
   const [transitioning, setTransitioning] = useState(false);
   const [continuousHead, setContinuousHead] = useState<number | null>(null);
 
@@ -469,7 +502,6 @@ export default function Room() {
 
   const totalMessages = messages?.length || 0;
   const anyPlaying = activeMediaIds.size > 0;
-  const playingCount = activeMediaIds.size;
 
   const addActiveMedia = useCallback((msgId: number) => {
     setActiveMediaIds((prev) => {
@@ -505,31 +537,9 @@ export default function Room() {
     });
   }, []);
 
-  const handleMediaEnded = useCallback((msgId: number) => {
-    removeActiveMedia(msgId);
-
-    if (playbackMode === "continuous" && continuousHead === msgId) {
-      const idx = mediaMessages.findIndex((m) => m.id === msgId);
-      if (idx >= 0 && idx < mediaMessages.length - 1) {
-        const nextId = mediaMessages[idx + 1].id;
-        setTransitioning(true);
-        setContinuousHead(nextId);
-        setTimeout(() => {
-          setTransitioning(false);
-        }, 600);
-      } else {
-        setContinuousHead(null);
-      }
-    }
-  }, [playbackMode, continuousHead, mediaMessages, removeActiveMedia]);
-
   const handleMediaPlay = useCallback((msgId: number) => {
     addActiveMedia(msgId);
-    if (playbackMode === "continuous" && continuousHead !== null && continuousHead !== msgId) {
-      setContinuousHead(null);
-      setPlaybackMode("single");
-    }
-  }, [addActiveMedia, playbackMode, continuousHead]);
+  }, [addActiveMedia]);
 
   const handleMediaStop = useCallback((msgId: number) => {
     removeActiveMedia(msgId);
@@ -783,8 +793,10 @@ export default function Room() {
 
   const playAll = useCallback(() => {
     if (mediaMessages.length > 0) {
-      setPlaybackMode("continuous");
-      setContinuousHead(mediaMessages[0].id);
+      const allIds = mediaMessages.map((m) => m.id);
+      setActiveMediaIds(new Set(allIds));
+      playOrderRef.current = allIds;
+      setContinuousHead(allIds[0]);
     }
   }, [mediaMessages]);
 
@@ -792,7 +804,6 @@ export default function Room() {
     setActiveMediaIds(new Set());
     playOrderRef.current = [];
     setContinuousHead(null);
-    setPlaybackMode("single");
     setCurrentAnalyser(null);
   }, []);
 
@@ -829,43 +840,6 @@ export default function Room() {
       <div className="flex items-center justify-between mb-2 shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => setPlaybackMode(playbackMode === "single" ? "continuous" : "single")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 border text-[10px] font-mono uppercase tracking-widest transition-all ${
-              playbackMode === "continuous"
-                ? "border-[var(--depth-blue)] text-[var(--depth-blue)] bg-[var(--depth-blue)]/5"
-                : "border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Radio className={`w-3 h-3 ${playbackMode === "continuous" ? "animate-pulse" : ""}`} />
-            {playbackMode === "continuous" ? "CONTINUOUS" : "SINGLE"}
-          </button>
-
-          <div className="flex items-center border border-border">
-            {TRACK_OPTIONS.map((opt) => (
-              <button
-                key={opt === Infinity ? "all" : opt}
-                onClick={() => setMaxTracks(opt)}
-                className={`px-2 py-1.5 text-[10px] font-mono uppercase tracking-widest transition-all ${
-                  maxTracks === opt
-                    ? "bg-[var(--depth-blue)]/10 text-[var(--depth-blue)]"
-                    : "text-muted-foreground hover:text-foreground"
-                } ${opt !== TRACK_OPTIONS[0] ? "border-l border-border" : ""}`}
-              >
-                {opt === Infinity ? "ALL" : opt}
-              </button>
-            ))}
-          </div>
-
-          {mediaMessages.length > 0 && (
-            <button
-              onClick={playAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-border text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-foreground transition-all"
-            >
-              <Zap className="w-3 h-3" />
-              PLAY ALL
-            </button>
-          )}
-          <button
             onClick={() => setShowFx(!showFx)}
             className={`flex items-center gap-1.5 px-3 py-1.5 border text-[10px] font-mono uppercase tracking-widest transition-all ${
               showFx
@@ -875,22 +849,23 @@ export default function Room() {
           >
             FX
           </button>
+          <button
+            onClick={playAll}
+            disabled={mediaMessages.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-border text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-foreground transition-all disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <Play className="w-3 h-3" />
+            PLAY ALL
+          </button>
+          <button
+            onClick={stopAll}
+            disabled={!anyPlaying}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-border text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-destructive hover:border-destructive transition-all disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <Pause className="w-3 h-3" />
+            STOP ALL
+          </button>
           <AmbientDrone messageCount={totalMessages} active={true} />
-        </div>
-        <div className="flex items-center gap-3">
-          {anyPlaying && (
-            <span className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground">
-              {playingCount} PLAYING
-            </span>
-          )}
-          {anyPlaying && (
-            <button
-              onClick={stopAll}
-              className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-destructive transition-colors"
-            >
-              STOP ALL
-            </button>
-          )}
         </div>
       </div>
 
@@ -952,47 +927,6 @@ export default function Room() {
             />
             <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{(delayFeedback * 100).toFixed(0)}%</span>
           </div>
-          <div className="flex flex-wrap gap-2 mt-1">
-            <button
-              onClick={() => { setSpeed(1); setDistortion(0); setDelayTime(0); setDelayFeedback(0); }}
-              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
-            >
-              CLEAN
-            </button>
-            <button
-              onClick={() => { setSpeed(0.5); setDistortion(40); setDelayTime(0.3); setDelayFeedback(0.5); }}
-              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
-            >
-              HAUNTED
-            </button>
-            <button
-              onClick={() => { setSpeed(1.5); setDistortion(80); setDelayTime(0.1); setDelayFeedback(0.3); }}
-              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
-            >
-              CRUSHED
-            </button>
-            <button
-              onClick={() => { setSpeed(0.75); setDistortion(10); setDelayTime(0.6); setDelayFeedback(0.7); }}
-              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
-            >
-              SUBMERGED
-            </button>
-            <button
-              onClick={() => { setSpeed(0.35); setDistortion(65); setDelayTime(0.8); setDelayFeedback(0.85); }}
-              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
-            >
-              VOID
-            </button>
-            <button
-              onClick={() => { setSpeed(2); setDistortion(20); setDelayTime(0.05); setDelayFeedback(0.15); }}
-              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
-            >
-              NERVE
-            </button>
-          </div>
-          <div className="text-[8px] font-mono text-muted-foreground/50 mt-1 tracking-wider">
-            audio: waveshaper + delay chain · video: contrast + hue + blur
-          </div>
         </div>
       )}
 
@@ -1011,7 +945,7 @@ export default function Room() {
           const isThisPlaying = activeMediaIds.has(msg.id);
           const isThisMuted = mutedIds.has(msg.id);
           const hasMedia = msg.mediaType === "audio" || msg.mediaType === "video";
-          const isContinuousTarget = playbackMode === "continuous" && continuousHead === msg.id;
+          const isContinuousTarget = continuousHead === msg.id;
           return (
             <div
               key={msg.id}
@@ -1065,7 +999,6 @@ export default function Room() {
                   src={`/api/storage${msg.mediaUrl}`}
                   autoPlay={isContinuousTarget && !isThisPlaying}
                   isActive={isThisPlaying}
-                  onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
                   playbackRate={speed}
@@ -1081,7 +1014,6 @@ export default function Room() {
                   src={`/api/storage${msg.mediaUrl}`}
                   autoPlay={isContinuousTarget && !isThisPlaying}
                   isActive={isThisPlaying}
-                  onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
                   playbackRate={speed}

@@ -12,7 +12,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col relative">
       <nav className="fixed top-0 w-full z-50 border-b border-border bg-background/90 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-          <Link href="/" className="depth-text text-sm tracking-[0.25em] uppercase">
+          <Link href="/" className="depth-text text-sm tracking-[0.25em] uppercase mr-12">
             Host
           </Link>
 
