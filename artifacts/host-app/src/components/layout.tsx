@@ -20,6 +20,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             {isAuthenticated ? (
               <>
                 <Link href="/dashboard" className="hover:text-foreground transition-colors">Dashboard</Link>
+                <Link href="/stations" className="hover:text-foreground transition-colors">Stations</Link>
                 <Link href="/status" className="hover:text-foreground transition-colors">Status</Link>
                 {user?.isAdmin && (
                   <Link href="/admin" className="text-primary hover:text-primary/80 transition-colors">Root</Link>

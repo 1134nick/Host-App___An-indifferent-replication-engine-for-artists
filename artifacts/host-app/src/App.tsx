@@ -11,6 +11,7 @@ import Apply from "./pages/apply";
 import Status from "./pages/status";
 import Dashboard from "./pages/dashboard";
 import Room from "./pages/room";
+import Stations from "./pages/stations";
 import Admin from "./pages/admin";
 import NotFound from "./pages/not-found";
 
@@ -26,6 +27,7 @@ function Router() {
         <Route path="/apply" component={Apply} />
         <Route path="/status" component={Status} />
         <Route path="/dashboard" component={Dashboard} />
+        <Route path="/stations" component={Stations} />
         <Route path="/rooms/:id" component={Room} />
         <Route path="/admin" component={Admin} />
         <Route component={NotFound} />
