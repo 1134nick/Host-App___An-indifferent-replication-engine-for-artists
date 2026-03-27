@@ -23,6 +23,7 @@ function BlobAudioPlayer({
   onPlay,
   onStop,
   autoPlay,
+  isActive,
   playbackRate,
   distortionAmount,
   delayTime,
@@ -35,6 +36,7 @@ function BlobAudioPlayer({
   onPlay?: () => void;
   onStop?: () => void;
   autoPlay?: boolean;
+  isActive: boolean;
   playbackRate: number;
   distortionAmount: number;
   delayTime: number;
@@ -161,6 +163,18 @@ function BlobAudioPlayer({
     }
   }, [autoPlay]);
 
+  const playingRef = useRef(false);
+  playingRef.current = playing;
+
+  useEffect(() => {
+    if (!isActive && playingRef.current) {
+      cleanup();
+      setPlaying(false);
+      setProgress(0);
+      offsetRef.current = 0;
+    }
+  }, [isActive, cleanup]);
+
   useEffect(() => {
     if (echoNodeRef.current) {
       echoNodeRef.current.gain.gain.value = muted ? 0 : 1;
@@ -267,6 +281,7 @@ function EchoVideo({
   onPlay,
   onStop,
   autoPlay,
+  isActive,
   playbackRate,
   muted,
 }: {
@@ -275,6 +290,7 @@ function EchoVideo({
   onPlay?: () => void;
   onStop?: () => void;
   autoPlay?: boolean;
+  isActive: boolean;
   playbackRate: number;
   muted: boolean;
 }) {
@@ -302,6 +318,16 @@ function EchoVideo({
       videoRef.current.play().catch(() => {});
     }
   }, [autoPlay]);
+
+  const playingRef = useRef(false);
+  playingRef.current = playing;
+
+  useEffect(() => {
+    if (!isActive && playingRef.current && videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+  }, [isActive]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -437,7 +463,7 @@ export default function Room() {
   const handleMediaEnded = useCallback((msgId: number) => {
     removeActiveMedia(msgId);
 
-    if (playbackMode === "continuous" && continuousHead !== null) {
+    if (playbackMode === "continuous" && continuousHead === msgId) {
       const idx = mediaMessages.findIndex((m) => m.id === msgId);
       if (idx >= 0 && idx < mediaMessages.length - 1) {
         const nextId = mediaMessages[idx + 1].id;
@@ -976,6 +1002,7 @@ export default function Room() {
                 <BlobAudioPlayer
                   src={`/api/storage${msg.mediaUrl}`}
                   autoPlay={isContinuousTarget && !isThisPlaying}
+                  isActive={isThisPlaying}
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
@@ -991,6 +1018,7 @@ export default function Room() {
                 <EchoVideo
                   src={`/api/storage${msg.mediaUrl}`}
                   autoPlay={isContinuousTarget && !isThisPlaying}
+                  isActive={isThisPlaying}
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
