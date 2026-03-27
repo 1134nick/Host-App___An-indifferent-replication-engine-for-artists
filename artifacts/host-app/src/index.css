@@ -165,7 +165,6 @@
 
   .scanlines {
     position: relative;
-    overflow: hidden;
   }
 
   .scanlines::after {

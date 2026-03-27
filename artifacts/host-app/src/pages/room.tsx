@@ -56,6 +56,15 @@ function BlobAudioPlayer({
   const rafRef = useRef<number>(0);
   const loadedRef = useRef(false);
 
+  const onEndedRef = useRef(onEnded);
+  const onPlayRef = useRef(onPlay);
+  const onStopRef = useRef(onStop);
+  const onAnalyserRef = useRef(onAnalyser);
+  onEndedRef.current = onEnded;
+  onPlayRef.current = onPlay;
+  onStopRef.current = onStop;
+  onAnalyserRef.current = onAnalyser;
+
   const cleanup = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     if (echoNodeRef.current) {
@@ -70,8 +79,8 @@ function BlobAudioPlayer({
       } catch {}
       echoNodeRef.current = null;
     }
-    onAnalyser?.(null);
-  }, [onAnalyser]);
+    onAnalyserRef.current?.(null);
+  }, []);
 
   useEffect(() => () => cleanup(), [cleanup]);
 
@@ -107,7 +116,7 @@ function BlobAudioPlayer({
       });
       echoNodeRef.current = node;
       node.gain.gain.value = muted ? 0 : 1;
-      onAnalyser?.(node.analyser);
+      onAnalyserRef.current?.(node.analyser);
 
       const ac = getAudioContext();
       startTimeRef.current = ac.currentTime;
@@ -117,14 +126,14 @@ function BlobAudioPlayer({
         setPlaying(false);
         setProgress(0);
         offsetRef.current = 0;
-        onAnalyser?.(null);
-        onStop?.();
-        onEnded?.();
+        onAnalyserRef.current?.(null);
+        onStopRef.current?.();
+        onEndedRef.current?.();
       };
 
       node.source.start(0, fromOffset);
       setPlaying(true);
-      onPlay?.();
+      onPlayRef.current?.();
 
       const tick = () => {
         if (!echoNodeRef.current) return;
@@ -135,7 +144,7 @@ function BlobAudioPlayer({
       };
       rafRef.current = requestAnimationFrame(tick);
     } catch {}
-  }, [cleanup, loadBuffer, playbackRate, distortionAmount, delayTime, delayFeedback, muted, onEnded, onPlay, onStop, onAnalyser]);
+  }, [cleanup, loadBuffer, playbackRate, distortionAmount, delayTime, delayFeedback, muted]);
 
   const stopPlayback = useCallback(() => {
     if (echoNodeRef.current) {
@@ -145,8 +154,8 @@ function BlobAudioPlayer({
     }
     cleanup();
     setPlaying(false);
-    onStop?.();
-  }, [cleanup, playbackRate, onStop]);
+    onStopRef.current?.();
+  }, [cleanup, playbackRate]);
 
   const togglePlay = useCallback(async () => {
     try {
@@ -288,6 +297,9 @@ function EchoVideo({
   isActive,
   playbackRate,
   muted,
+  distortionAmount,
+  delayTime,
+  delayFeedback,
 }: {
   src: string;
   onEnded?: () => void;
@@ -297,16 +309,26 @@ function EchoVideo({
   isActive: boolean;
   playbackRate: number;
   muted: boolean;
+  distortionAmount: number;
+  delayTime: number;
+  delayFeedback: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
 
+  const onPlayRef = useRef(onPlay);
+  const onStopRef = useRef(onStop);
+  const onEndedRef = useRef(onEnded);
+  onPlayRef.current = onPlay;
+  onStopRef.current = onStop;
+  onEndedRef.current = onEnded;
+
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const handlePlay = () => { setPlaying(true); onPlay?.(); };
-    const handlePause = () => { setPlaying(false); onStop?.(); };
-    const handleEnd = () => { setPlaying(false); onStop?.(); onEnded?.(); };
+    const handlePlay = () => { setPlaying(true); onPlayRef.current?.(); };
+    const handlePause = () => { setPlaying(false); onStopRef.current?.(); };
+    const handleEnd = () => { setPlaying(false); onStopRef.current?.(); onEndedRef.current?.(); };
     v.addEventListener("play", handlePlay);
     v.addEventListener("pause", handlePause);
     v.addEventListener("ended", handleEnd);
@@ -315,7 +337,7 @@ function EchoVideo({
       v.removeEventListener("pause", handlePause);
       v.removeEventListener("ended", handleEnd);
     };
-  }, [onEnded, onPlay, onStop]);
+  }, [src]);
 
   useEffect(() => {
     if (autoPlay && videoRef.current) {
@@ -345,6 +367,18 @@ function EchoVideo({
     }
   }, [muted]);
 
+  const crush = distortionAmount / 100;
+  const wet = delayFeedback;
+  const videoFilter = playing
+    ? [
+        crush > 0.05 ? `contrast(${1 + crush * 1.2})` : "",
+        crush > 0.05 ? `saturate(${1 + crush * 2})` : "",
+        crush > 0.3 ? `hue-rotate(${crush * 40}deg)` : "",
+        delayTime > 0.05 ? `blur(${delayTime * 1.5}px)` : "",
+        wet > 0.1 ? `brightness(${1 - wet * 0.3})` : "",
+      ].filter(Boolean).join(" ") || "none"
+    : "none";
+
   return (
     <div className={`mt-2 ${playing ? "scanlines" : ""}`}>
       <video
@@ -352,9 +386,16 @@ function EchoVideo({
         src={src}
         controls
         preload="metadata"
+        playsInline
         muted={muted}
         className={`max-w-xs max-h-64 border ${playing ? "border-[var(--depth-blue)]" : "border-border/50"}`}
-        style={playing ? { boxShadow: "2px 0 0 var(--depth-red), -1px 0 0 var(--depth-blue)" } : {}}
+        style={{
+          ...(playing ? {
+            boxShadow: `${2 + crush * 4}px 0 0 var(--depth-red), ${-1 - crush * 3}px 0 0 var(--depth-blue)`,
+            filter: videoFilter,
+            transition: "filter 0.3s ease",
+          } : {}),
+        }}
       />
     </div>
   );
@@ -911,12 +952,12 @@ export default function Room() {
             />
             <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{(delayFeedback * 100).toFixed(0)}%</span>
           </div>
-          <div className="flex gap-2 mt-1">
+          <div className="flex flex-wrap gap-2 mt-1">
             <button
               onClick={() => { setSpeed(1); setDistortion(0); setDelayTime(0); setDelayFeedback(0); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
             >
-              RESET
+              CLEAN
             </button>
             <button
               onClick={() => { setSpeed(0.5); setDistortion(40); setDelayTime(0.3); setDelayFeedback(0.5); }}
@@ -936,13 +977,28 @@ export default function Room() {
             >
               SUBMERGED
             </button>
+            <button
+              onClick={() => { setSpeed(0.35); setDistortion(65); setDelayTime(0.8); setDelayFeedback(0.85); }}
+              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
+            >
+              VOID
+            </button>
+            <button
+              onClick={() => { setSpeed(2); setDistortion(20); setDelayTime(0.05); setDelayFeedback(0.15); }}
+              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
+            >
+              NERVE
+            </button>
+          </div>
+          <div className="text-[8px] font-mono text-muted-foreground/50 mt-1 tracking-wider">
+            audio: waveshaper + delay chain · video: contrast + hue + blur
           </div>
         </div>
       )}
 
       <div
         ref={scrollContainerRef}
-        className={`flex-1 overflow-y-auto mb-4 pr-2 space-y-3 flex flex-col font-mono text-sm ${anyPlaying ? "scanlines" : ""}`}
+        className="flex-1 overflow-y-auto mb-4 pr-2 space-y-3 flex flex-col font-mono text-sm"
       >
         {messages?.length === 0 && (
           <div className="text-center text-muted-foreground italic my-auto text-xs lowercase tracking-widest">
@@ -1030,6 +1086,9 @@ export default function Room() {
                   onStop={() => handleMediaStop(msg.id)}
                   playbackRate={speed}
                   muted={isThisMuted}
+                  distortionAmount={distortion}
+                  delayTime={delayTime}
+                  delayFeedback={delayFeedback}
                 />
               )}
             </div>
