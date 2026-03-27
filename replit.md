@@ -109,6 +109,9 @@ Members can send photos, voice messages, and short videos in rooms. All identiti
 - **Persistence**: messages are stored indefinitely (no auto-expiry). Members can manually delete their own messages.
 - **Object storage**: Replit App Storage (GCS bucket), presigned PUT URLs, served back via `/api/storage/objects/*` with Range request support
 - **Audio playback**: BlobAudioPlayer component fetches audio as blob, detects format from magic bytes (MP4/WebM/OGG), creates blob URL for reliable playback
+- **Playback modes**: Toggle between SINGLE (one echo at a time, manual) and CONTINUOUS (echoes chain automatically — when one ends, the next media message starts). "PLAY ALL" starts from the first echo in continuous mode.
+- **Glitch effects**: When media plays, the feed activates visual glitch effects — ambient jitter, scanline overlay, RGB split on playing messages, corrupt text effects. Aesthetic: Yeezus-era distortion meets Arca mutant beauty.
+- **Echo states**: Playing messages get blue/red depth border glow, text corruption animation, and the message card flickers subtly. Images in the feed shift to luminosity blend mode during playback.
 
 ## Member Channels
 

@@ -8,11 +8,25 @@ import {
   useDeleteMessage,
   useGetMe,
 } from "@workspace/api-client-react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, Play, Pause, Loader2, Trash2, Video } from "lucide-react";
+import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, Play, Pause, Loader2, Trash2, Video, Radio, Zap } from "lucide-react";
 
-function BlobAudioPlayer({ src }: { src: string }) {
+type PlaybackMode = "single" | "continuous";
+
+function BlobAudioPlayer({
+  src,
+  isActive,
+  onEnded,
+  onPlay,
+  autoPlay,
+}: {
+  src: string;
+  isActive?: boolean;
+  onEnded?: () => void;
+  onPlay?: () => void;
+  autoPlay?: boolean;
+}) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -28,7 +42,7 @@ function BlobAudioPlayer({ src }: { src: string }) {
   }, [blobUrl]);
 
   const loadAudio = useCallback(async () => {
-    if (blobUrl) return;
+    if (blobUrl) return blobUrl;
     setLoading(true);
     setError(false);
     try {
@@ -49,8 +63,10 @@ function BlobAudioPlayer({ src }: { src: string }) {
       const blob = new Blob([arrayBuf], { type: detectedType });
       const url = URL.createObjectURL(blob);
       setBlobUrl(url);
+      return url;
     } catch {
       setError(true);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -66,9 +82,10 @@ function BlobAudioPlayer({ src }: { src: string }) {
     if (playing) {
       audio.pause();
     } else {
+      onPlay?.();
       audio.play();
     }
-  }, [blobUrl, playing, loadAudio]);
+  }, [blobUrl, playing, loadAudio, onPlay]);
 
   useEffect(() => {
     if (!blobUrl) return;
@@ -77,33 +94,55 @@ function BlobAudioPlayer({ src }: { src: string }) {
 
     const onMeta = () => setDuration(audio.duration);
     const onTime = () => setProgress(audio.currentTime);
-    const onPlay = () => setPlaying(true);
+    const handlePlay = () => { setPlaying(true); onPlay?.(); };
     const onPause = () => setPlaying(false);
-    const onEnd = () => { setPlaying(false); setProgress(0); };
+    const handleEnd = () => { setPlaying(false); setProgress(0); onEnded?.(); };
     const onErr = () => {
       if (audio.networkState === audio.NETWORK_NO_SOURCE) setError(true);
     };
 
     audio.addEventListener("loadedmetadata", onMeta);
     audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("play", onPlay);
+    audio.addEventListener("play", handlePlay);
     audio.addEventListener("pause", onPause);
-    audio.addEventListener("ended", onEnd);
+    audio.addEventListener("ended", handleEnd);
     audio.addEventListener("error", onErr);
 
-    audio.play().catch(() => {});
+    if (!autoPlay) {
+      audio.play().catch(() => {});
+    }
 
     return () => {
       audio.removeEventListener("loadedmetadata", onMeta);
       audio.removeEventListener("timeupdate", onTime);
-      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("play", handlePlay);
       audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("ended", onEnd);
+      audio.removeEventListener("ended", handleEnd);
       audio.removeEventListener("error", onErr);
       audio.pause();
       audio.src = "";
     };
   }, [blobUrl]);
+
+  useEffect(() => {
+    if (autoPlay && !blobUrl) {
+      loadAudio().then((url) => {
+        if (url) {
+          const audio = audioRef.current;
+          if (audio) audio.play().catch(() => {});
+        }
+      });
+    }
+    if (autoPlay && blobUrl && audioRef.current && !playing) {
+      audioRef.current.play().catch(() => {});
+    }
+  }, [autoPlay, blobUrl, loadAudio]);
+
+  useEffect(() => {
+    if (!isActive && playing && audioRef.current) {
+      audioRef.current.pause();
+    }
+  }, [isActive, playing]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -129,12 +168,12 @@ function BlobAudioPlayer({ src }: { src: string }) {
   }
 
   return (
-    <div className="flex items-center gap-2 mt-2">
+    <div className={`flex items-center gap-2 mt-2 ${playing ? "corrupt-text" : ""}`}>
       <button
         onClick={togglePlay}
         disabled={loading}
         className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-        style={{ background: "#333", color: "#f5f0e8" }}
+        style={{ background: playing ? "var(--depth-blue)" : "#333", color: "#f5f0e8" }}
       >
         {loading ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -152,15 +191,74 @@ function BlobAudioPlayer({ src }: { src: string }) {
         <div
           className="h-full rounded-full"
           style={{
-            background: "#f5f0e8",
+            background: playing ? "var(--depth-blue)" : "#f5f0e8",
             width: duration > 0 ? `${(progress / duration) * 100}%` : "0%",
             transition: "width 0.1s linear",
+            boxShadow: playing ? "0 0 6px var(--depth-blue)" : "none",
           }}
         />
       </div>
-      <span className="text-xs shrink-0" style={{ color: "#999", fontFamily: "var(--font-mono)" }}>
+      <span className="text-xs shrink-0" style={{ color: playing ? "var(--depth-blue)" : "#999", fontFamily: "var(--font-mono)" }}>
         {duration > 0 ? `${formatTime(progress)} / ${formatTime(duration)}` : "0:00"}
       </span>
+    </div>
+  );
+}
+
+function EchoVideo({
+  src,
+  isActive,
+  onEnded,
+  onPlay,
+  autoPlay,
+}: {
+  src: string;
+  isActive?: boolean;
+  onEnded?: () => void;
+  onPlay?: () => void;
+  autoPlay?: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const handlePlay = () => { setPlaying(true); onPlay?.(); };
+    const handlePause = () => setPlaying(false);
+    const handleEnd = () => { setPlaying(false); onEnded?.(); };
+    v.addEventListener("play", handlePlay);
+    v.addEventListener("pause", handlePause);
+    v.addEventListener("ended", handleEnd);
+    return () => {
+      v.removeEventListener("play", handlePlay);
+      v.removeEventListener("pause", handlePause);
+      v.removeEventListener("ended", handleEnd);
+    };
+  }, [onEnded, onPlay]);
+
+  useEffect(() => {
+    if (autoPlay && videoRef.current) {
+      videoRef.current.play().catch(() => {});
+    }
+  }, [autoPlay]);
+
+  useEffect(() => {
+    if (!isActive && playing && videoRef.current) {
+      videoRef.current.pause();
+    }
+  }, [isActive, playing]);
+
+  return (
+    <div className={`mt-2 ${playing ? "scanlines" : ""}`}>
+      <video
+        ref={videoRef}
+        src={src}
+        controls
+        preload="metadata"
+        className={`max-w-xs max-h-64 border ${playing ? "border-[var(--depth-blue)]" : "border-border/50"}`}
+        style={playing ? { boxShadow: "2px 0 0 var(--depth-red), -1px 0 0 var(--depth-blue)" } : {}}
+      />
     </div>
   );
 }
@@ -195,6 +293,9 @@ export default function Room() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("single");
+  const [activeMediaId, setActiveMediaId] = useState<number | null>(null);
+
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -204,6 +305,34 @@ export default function Room() {
   const videoChunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelledRef = useRef(false);
+
+  const mediaMessages = useMemo(() => {
+    if (!messages) return [];
+    return messages.filter((m) => m.mediaType === "audio" || m.mediaType === "video");
+  }, [messages]);
+
+  const anyPlaying = activeMediaId !== null;
+
+  const handleMediaEnded = useCallback((msgId: number) => {
+    if (playbackMode === "single") {
+      setActiveMediaId(null);
+      return;
+    }
+    const idx = mediaMessages.findIndex((m) => m.id === msgId);
+    if (idx >= 0 && idx < mediaMessages.length - 1) {
+      setActiveMediaId(mediaMessages[idx + 1].id);
+    } else {
+      setActiveMediaId(null);
+    }
+  }, [playbackMode, mediaMessages]);
+
+  const handleMediaPlay = useCallback((msgId: number) => {
+    if (playbackMode === "single") {
+      setActiveMediaId(msgId);
+    } else {
+      setActiveMediaId(msgId);
+    }
+  }, [playbackMode]);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -436,6 +565,13 @@ export default function Room() {
     );
   };
 
+  const playAll = useCallback(() => {
+    if (mediaMessages.length > 0) {
+      setPlaybackMode("continuous");
+      setActiveMediaId(mediaMessages[0].id);
+    }
+  }, [mediaMessages]);
+
   if (isLoading) {
     return <div className="flex-1 flex items-center justify-center font-mono text-muted-foreground text-xs">...</div>;
   }
@@ -445,22 +581,56 @@ export default function Room() {
   const isBusy = sendMessageMutation.isPending || isUploading;
 
   return (
-    <div className="flex-1 flex flex-col max-w-5xl mx-auto w-full px-4 py-6 h-[calc(100vh-3.5rem)]">
+    <div className={`flex-1 flex flex-col max-w-5xl mx-auto w-full px-4 py-6 h-[calc(100vh-3.5rem)] ${anyPlaying ? "glitch-active" : ""}`}>
       <header className="flex justify-between items-center mb-6 pb-4 shrink-0">
         <Link href="/dashboard" className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="w-4 h-4" />
           Back
         </Link>
-        <span className="depth-text text-sm uppercase tracking-[0.2em]">
+        <span className={`depth-text text-sm uppercase tracking-[0.2em] ${anyPlaying ? "corrupt-text" : ""}`}>
           {currentRoom?.roomType === "general"
             ? "General"
             : currentRoom?.displayName || `Channel ${roomId}`}
         </span>
       </header>
 
-      <div className="weave-divider w-full mb-4 shrink-0" />
+      <div className="weave-divider w-full mb-2 shrink-0" />
 
-      <div className="flex-1 overflow-y-auto mb-4 pr-2 space-y-3 flex flex-col font-mono text-sm">
+      <div className="flex items-center justify-between mb-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setPlaybackMode(playbackMode === "single" ? "continuous" : "single")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 border text-[10px] font-mono uppercase tracking-widest transition-all ${
+              playbackMode === "continuous"
+                ? "border-[var(--depth-blue)] text-[var(--depth-blue)] bg-[var(--depth-blue)]/5"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+            title={playbackMode === "continuous" ? "Switch to single echo" : "Switch to continuous flow"}
+          >
+            <Radio className={`w-3 h-3 ${playbackMode === "continuous" ? "animate-pulse" : ""}`} />
+            {playbackMode === "continuous" ? "CONTINUOUS" : "SINGLE"}
+          </button>
+          {playbackMode === "continuous" && mediaMessages.length > 0 && (
+            <button
+              onClick={playAll}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-border text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-foreground transition-all"
+            >
+              <Zap className="w-3 h-3" />
+              PLAY ALL
+            </button>
+          )}
+        </div>
+        {anyPlaying && (
+          <button
+            onClick={() => setActiveMediaId(null)}
+            className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-destructive transition-colors"
+          >
+            STOP
+          </button>
+        )}
+      </div>
+
+      <div className={`flex-1 overflow-y-auto mb-4 pr-2 space-y-3 flex flex-col font-mono text-sm ${anyPlaying ? "scanlines" : ""}`}>
         {messages?.length === 0 && (
           <div className="text-center text-muted-foreground italic my-auto text-xs lowercase tracking-widest">
             silence. be the first to speak.
@@ -469,17 +639,34 @@ export default function Room() {
         {messages?.map((msg) => {
           const isSystem = msg.isSystemMessage;
           const isOwn = me?.id != null && msg.userId === me.id;
+          const isThisPlaying = activeMediaId === msg.id;
+          const hasMedia = msg.mediaType === "audio" || msg.mediaType === "video";
           return (
             <div
               key={msg.id}
-              className={`p-4 border ${isSystem ? "border-primary/20 diamond-pattern" : "bg-card border-border"}`}
+              className={`p-4 border transition-all duration-300 ${
+                isSystem
+                  ? "border-primary/20 diamond-pattern"
+                  : isThisPlaying
+                    ? "echo-playing bg-card"
+                    : "bg-card border-border"
+              } ${isThisPlaying ? "glitch-msg" : ""}`}
             >
               <div className="flex justify-between items-start mb-2 text-xs opacity-60 pb-2">
-                <span className="font-medium tracking-wider">
+                <span className={`font-medium tracking-wider ${isThisPlaying ? "echo-label" : ""}`}>
                   {isSystem ? "SYSTEM" : (msg.maskedSenderLabel || "UNKNOWN")}
                 </span>
                 <div className="flex items-center gap-2">
                   <span>{new Date(msg.createdAt).toLocaleTimeString()}</span>
+                  {hasMedia && !isThisPlaying && playbackMode === "continuous" && (
+                    <button
+                      onClick={() => setActiveMediaId(msg.id)}
+                      className="text-muted-foreground hover:text-[var(--depth-blue)] transition-colors"
+                      title="Play from here"
+                    >
+                      <Play className="w-3 h-3" />
+                    </button>
+                  )}
                   {isOwn && !isSystem && (
                     <button
                       onClick={() => handleDeleteMessage(msg.id)}
@@ -491,29 +678,34 @@ export default function Room() {
                   )}
                 </div>
               </div>
-              {msg.content && <p className="whitespace-pre-wrap text-foreground mb-2">{msg.content}</p>}
+              {msg.content && <p className={`whitespace-pre-wrap text-foreground mb-2 ${isThisPlaying ? "corrupt-text" : ""}`}>{msg.content}</p>}
               {msg.mediaType === "image" && msg.mediaUrl && (
                 <div className="mt-2">
                   <img
                     src={`/api/storage${msg.mediaUrl}`}
                     alt="Transmitted image"
-                    className="max-w-xs max-h-64 object-contain border border-border/50"
+                    className={`max-w-xs max-h-64 object-contain border border-border/50 ${anyPlaying ? "mix-blend-luminosity" : ""}`}
                     loading="lazy"
                   />
                 </div>
               )}
               {msg.mediaType === "audio" && msg.mediaUrl && (
-                <BlobAudioPlayer src={`/api/storage${msg.mediaUrl}`} />
+                <BlobAudioPlayer
+                  src={`/api/storage${msg.mediaUrl}`}
+                  isActive={isThisPlaying || !anyPlaying}
+                  autoPlay={isThisPlaying && playbackMode === "continuous"}
+                  onEnded={() => handleMediaEnded(msg.id)}
+                  onPlay={() => handleMediaPlay(msg.id)}
+                />
               )}
               {msg.mediaType === "video" && msg.mediaUrl && (
-                <div className="mt-2">
-                  <video
-                    src={`/api/storage${msg.mediaUrl}`}
-                    controls
-                    preload="metadata"
-                    className="max-w-xs max-h-64 border border-border/50"
-                  />
-                </div>
+                <EchoVideo
+                  src={`/api/storage${msg.mediaUrl}`}
+                  isActive={isThisPlaying || !anyPlaying}
+                  autoPlay={isThisPlaying && playbackMode === "continuous"}
+                  onEnded={() => handleMediaEnded(msg.id)}
+                  onPlay={() => handleMediaPlay(msg.id)}
+                />
               )}
             </div>
           );
