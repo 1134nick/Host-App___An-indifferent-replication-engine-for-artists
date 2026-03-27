@@ -44,7 +44,7 @@ function BlobAudioPlayer({
   const echoNodeRef = useRef<EchoNode | null>(null);
   const bufferRef = useRef<AudioBuffer | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -52,18 +52,20 @@ function BlobAudioPlayer({
   const offsetRef = useRef(0);
   const rafRef = useRef<number>(0);
   const loadedRef = useRef(false);
-
-  const onPlayRef = useRef(onPlay);
-  const onStopRef = useRef(onStop);
   const onAnalyserRef = useRef(onAnalyser);
+  onAnalyserRef.current = onAnalyser;
+  const onEndedRef = useRef(onEnded);
+  onEndedRef.current = onEnded;
+  const onPlayRef = useRef(onPlay);
+  onPlayRef.current = onPlay;
+  const onStopRef = useRef(onStop);
+  onStopRef.current = onStop;
+
   const playbackRateRef = useRef(playbackRate);
   const distortionAmountRef = useRef(distortionAmount);
   const delayTimeRef = useRef(delayTime);
   const delayFeedbackRef = useRef(delayFeedback);
   const mutedRef = useRef(muted);
-  onPlayRef.current = onPlay;
-  onStopRef.current = onStop;
-  onAnalyserRef.current = onAnalyser;
   playbackRateRef.current = playbackRate;
   distortionAmountRef.current = distortionAmount;
   delayTimeRef.current = delayTime;
@@ -81,7 +83,10 @@ function BlobAudioPlayer({
         echoNodeRef.current.distortion.disconnect();
         echoNodeRef.current.delay.disconnect();
         echoNodeRef.current.delayGain.disconnect();
-      } catch {}
+      } catch (e) {
+        console.warn("BlobAudioPlayer cleanup error:", e);
+        setError("Audio cleanup failed — try reloading");
+      }
       echoNodeRef.current = null;
     }
     onAnalyserRef.current?.(null);
@@ -92,15 +97,16 @@ function BlobAudioPlayer({
   const loadBuffer = useCallback(async () => {
     if (bufferRef.current) return bufferRef.current;
     setLoading(true);
-    setError(false);
+    setError(null);
     try {
       const buf = await fetchAndDecode(src);
       bufferRef.current = buf;
       setDuration(buf.duration);
       loadedRef.current = true;
       return buf;
-    } catch {
-      setError(true);
+    } catch (e) {
+      console.error("BlobAudioPlayer load error:", e);
+      setError("Failed to load audio");
       return null;
     } finally {
       setLoading(false);
@@ -149,7 +155,10 @@ function BlobAudioPlayer({
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
-    } catch {}
+    } catch (e) {
+      console.error("BlobAudioPlayer startPlayback error:", e);
+      setError("Playback failed to start");
+    }
   }, [cleanup, loadBuffer]);
 
   const stopPlayback = useCallback(() => {
@@ -173,7 +182,10 @@ function BlobAudioPlayer({
         }
         await startPlayback(offsetRef.current);
       }
-    } catch {}
+    } catch (e) {
+      console.error("BlobAudioPlayer togglePlay error:", e);
+      setError("Playback error");
+    }
   }, [playing, stopPlayback, startPlayback, loadBuffer]);
 
   useEffect(() => {
@@ -207,15 +219,19 @@ function BlobAudioPlayer({
   }, [playbackRate, playing]);
 
   useEffect(() => {
-    if (echoNodeRef.current && playing && distortionAmount > 0) {
-      const samples = 44100;
-      const curve = new Float32Array(samples);
-      const deg = Math.PI / 180;
-      for (let i = 0; i < samples; i++) {
-        const x = (i * 2) / samples - 1;
-        curve[i] = ((3 + distortionAmount) * x * 20 * deg) / (Math.PI + distortionAmount * Math.abs(x));
+    if (echoNodeRef.current && playing) {
+      if (distortionAmount > 0) {
+        const samples = 44100;
+        const curve = new Float32Array(samples);
+        const deg = Math.PI / 180;
+        for (let i = 0; i < samples; i++) {
+          const x = (i * 2) / samples - 1;
+          curve[i] = ((3 + distortionAmount) * x * 20 * deg) / (Math.PI + distortionAmount * Math.abs(x));
+        }
+        echoNodeRef.current.distortion.curve = curve;
+      } else {
+        echoNodeRef.current.distortion.curve = null;
       }
-      echoNodeRef.current.distortion.curve = curve;
     }
   }, [distortionAmount, playing]);
 
@@ -249,7 +265,13 @@ function BlobAudioPlayer({
     return (
       <div className="flex items-center gap-2 text-xs" style={{ color: "#999" }}>
         <Volume2 className="w-4 h-4" />
-        <span>audio unavailable</span>
+        <span>{error}</span>
+        <button
+          onClick={() => { setError(null); loadedRef.current = false; bufferRef.current = null; }}
+          className="text-[9px] uppercase tracking-widest hover:text-foreground transition-colors"
+        >
+          RETRY
+        </button>
       </div>
     );
   }
@@ -445,7 +467,7 @@ export default function Room() {
   const roomId = parseInt(id || "0", 10);
 
   const { data: messages, isLoading } = useGetRoomMessages(roomId, { limit: 100 }, {
-    query: { refetchInterval: 3000 },
+    query: { refetchInterval: 1000 },
   });
   const { data: role } = useGetMyRole();
   const { data: me } = useGetMe();
@@ -479,6 +501,76 @@ export default function Room() {
   const [showFx, setShowFx] = useState(false);
 
   const [currentAnalyser, setCurrentAnalyser] = useState<AnalyserNode | null>(null);
+  const analyserMapRef = useRef<Map<number, AnalyserNode>>(new Map());
+  const mergedAnalyserRef = useRef<AnalyserNode | null>(null);
+  const mergedGainsRef = useRef<GainNode[]>([]);
+
+  const prevAnalysersRef = useRef<AnalyserNode[]>([]);
+
+  const rebuildMergedAnalyser = useCallback(() => {
+    for (let i = 0; i < mergedGainsRef.current.length; i++) {
+      const g = mergedGainsRef.current[i];
+      const a = prevAnalysersRef.current[i];
+      try { if (a) a.disconnect(g); } catch {}
+      try { g.disconnect(); } catch {}
+    }
+    mergedGainsRef.current = [];
+    prevAnalysersRef.current = [];
+    if (mergedAnalyserRef.current) {
+      try { mergedAnalyserRef.current.disconnect(); } catch {}
+    }
+    mergedAnalyserRef.current = null;
+
+    const analysers = Array.from(analyserMapRef.current.values());
+    if (analysers.length === 0) {
+      setCurrentAnalyser(null);
+      return;
+    }
+    if (analysers.length === 1) {
+      setCurrentAnalyser(analysers[0]);
+      return;
+    }
+
+    const ac = getAudioContext();
+    const merged = ac.createAnalyser();
+    merged.fftSize = 256;
+    merged.smoothingTimeConstant = 0.6;
+    const gains: GainNode[] = [];
+
+    for (const a of analysers) {
+      const g = ac.createGain();
+      g.gain.value = 1;
+      a.connect(g);
+      g.connect(merged);
+      gains.push(g);
+    }
+
+    mergedAnalyserRef.current = merged;
+    mergedGainsRef.current = gains;
+    prevAnalysersRef.current = analysers;
+    setCurrentAnalyser(merged);
+  }, []);
+
+  const registerAnalyser = useCallback((msgId: number, analyser: AnalyserNode | null) => {
+    if (analyser) {
+      analyserMapRef.current.set(msgId, analyser);
+    } else {
+      analyserMapRef.current.delete(msgId);
+    }
+    rebuildMergedAnalyser();
+  }, [rebuildMergedAnalyser]);
+
+  useEffect(() => {
+    return () => {
+      mergedGainsRef.current.forEach((g) => { try { g.disconnect(); } catch {} });
+      mergedGainsRef.current = [];
+      if (mergedAnalyserRef.current) {
+        try { mergedAnalyserRef.current.disconnect(); } catch {}
+        mergedAnalyserRef.current = null;
+      }
+      analyserMapRef.current.clear();
+    };
+  }, []);
 
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -539,7 +631,15 @@ export default function Room() {
 
   const handleMediaPlay = useCallback((msgId: number) => {
     addActiveMedia(msgId);
-  }, [addActiveMedia]);
+    if (playbackMode === "continuous") {
+      if (continuousHead === null) {
+        setContinuousHead(msgId);
+      } else if (continuousHead !== msgId) {
+        setContinuousHead(null);
+        setPlaybackMode("single");
+      }
+    }
+  }, [addActiveMedia, playbackMode, continuousHead]);
 
   const handleMediaStop = useCallback((msgId: number) => {
     removeActiveMedia(msgId);
@@ -793,10 +893,12 @@ export default function Room() {
 
   const playAll = useCallback(() => {
     if (mediaMessages.length > 0) {
-      const allIds = mediaMessages.map((m) => m.id);
-      setActiveMediaIds(new Set(allIds));
-      playOrderRef.current = allIds;
-      setContinuousHead(allIds[0]);
+      setPlaybackMode("single");
+      setContinuousHead(null);
+      setMaxTracks(Infinity);
+      const ids = mediaMessages.map((m) => m.id);
+      setActiveMediaIds(new Set<number>(ids));
+      playOrderRef.current = ids;
     }
   }, [mediaMessages]);
 
@@ -804,6 +906,11 @@ export default function Room() {
     setActiveMediaIds(new Set());
     playOrderRef.current = [];
     setContinuousHead(null);
+    setPlaybackMode("single");
+    analyserMapRef.current.clear();
+    mergedGainsRef.current.forEach((g) => { try { g.disconnect(); } catch {} });
+    mergedGainsRef.current = [];
+    mergedAnalyserRef.current = null;
     setCurrentAnalyser(null);
   }, []);
 
@@ -997,7 +1104,7 @@ export default function Room() {
               {msg.mediaType === "audio" && msg.mediaUrl && (
                 <BlobAudioPlayer
                   src={`/api/storage${msg.mediaUrl}`}
-                  autoPlay={isContinuousTarget && !isThisPlaying}
+                  autoPlay={isContinuousTarget || isThisPlaying}
                   isActive={isThisPlaying}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
@@ -1006,13 +1113,13 @@ export default function Room() {
                   delayTime={delayTime}
                   delayFeedback={delayFeedback}
                   muted={isThisMuted}
-                  onAnalyser={isThisPlaying ? setCurrentAnalyser : undefined}
+                  onAnalyser={(a) => registerAnalyser(msg.id, a)}
                 />
               )}
               {msg.mediaType === "video" && msg.mediaUrl && (
                 <EchoVideo
                   src={`/api/storage${msg.mediaUrl}`}
-                  autoPlay={isContinuousTarget && !isThisPlaying}
+                  autoPlay={isContinuousTarget || isThisPlaying}
                   isActive={isThisPlaying}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
