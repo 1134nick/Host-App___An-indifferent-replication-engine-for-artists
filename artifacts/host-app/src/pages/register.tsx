@@ -1,7 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, getErrorMessage } from "@/hooks/use-auth";
 import { motion } from "framer-motion";
 import { AlertCircle } from "lucide-react";
 
@@ -42,7 +42,7 @@ export default function Register() {
         {register.error && (
           <div className="mb-6 p-4 border border-destructive/30 bg-destructive/5 text-destructive text-xs flex items-start gap-3">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span className="uppercase tracking-wider">Initialization failed.</span>
+            <span className="uppercase tracking-wider">{getErrorMessage(register.error)}</span>
           </div>
         )}
 

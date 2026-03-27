@@ -2,6 +2,15 @@ import { useGetMe, useLogin, useLogout, useRegister } from "@workspace/api-clien
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 
+export function getErrorMessage(error: unknown): string {
+  if (!error || typeof error !== "object") return "Something went wrong";
+  const data = (error as { data?: { message?: string } }).data;
+  if (data?.message) return data.message;
+  const msg = (error as { message?: string }).message;
+  if (msg) return msg;
+  return "Something went wrong";
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -15,8 +24,8 @@ export function useAuth() {
 
   const login = useLogin({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      onSuccess: (user) => {
+        queryClient.setQueryData(["/api/auth/me"], user);
         setLocation("/status");
       }
     }
@@ -24,8 +33,8 @@ export function useAuth() {
 
   const register = useRegister({
     mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      onSuccess: (user) => {
+        queryClient.setQueryData(["/api/auth/me"], user);
         setLocation("/apply");
       }
     }
