@@ -105,11 +105,14 @@ Members can send photos, voice messages, and short videos in rooms. All identiti
 - **Voice**: MediaRecorder → auto-detected MIME (webm/mp4/ogg) → presigned URL upload → message with `mediaType: "audio"`
 - **Video**: getUserMedia (video+audio) → MediaRecorder with 20s limit → presigned URL upload → message with `mediaType: "video"`
 - **Captions**: optional text alongside media
-- **Delete**: users can delete their own messages via `DELETE /api/rooms/:roomId/messages/:messageId`
-- **Persistence**: messages are stored indefinitely (no auto-expiry). Members can manually delete their own messages.
+- **Delete**: users can delete their own messages via `DELETE /api/rooms/:roomId/messages/:messageId`. Only the DB row is removed — media files in object storage are intentionally preserved forever.
+- **Persistence**: messages stored indefinitely. Media files (audio/video) are never deleted from storage, even when a message is deleted.
 - **Object storage**: Replit App Storage (GCS bucket), presigned PUT URLs, served back via `/api/storage/objects/*` with Range request support
-- **Audio playback**: BlobAudioPlayer component fetches audio as blob, detects format from magic bytes (MP4/WebM/OGG), creates blob URL for reliable playback
-- **Playback modes**: Toggle between SINGLE (one echo at a time, manual) and CONTINUOUS (echoes chain automatically — when one ends, the next media message starts). "PLAY ALL" starts from the first echo in continuous mode.
+- **Audio playback**: BlobAudioPlayer uses Web Audio API (BufferSource nodes). Per-track gain node for individual mute control.
+- **Multi-track playback**: Members can play 1, 2, 3, or ALL echoes simultaneously. Track count selector in controls bar. When max tracks is reached, the oldest playing track stops to make room. Each track plays independently — no auto-pause-others.
+- **Per-message mute**: Every media message has a mute/unmute toggle (Volume2/VolumeX icon). Muting sets gain to 0 without stopping playback. Members sculpt their own mix.
+- **Seamless scrolling**: Auto-scroll only triggers on new messages and only if user hasn't manually scrolled up. Playing echoes continue when scrolled out of view.
+- **Playback modes**: Toggle between SINGLE and CONTINUOUS. In continuous mode, echoes chain sequentially with 600ms glitch transitions. "PLAY ALL" starts continuous from the first echo.
 - **Web Audio API engine**: All audio routed through Web Audio API graph: source → distortion (waveshaper) → delay (feedback loop) → gain → analyser → destination. Enables real-time sonic manipulation.
 - **FX panel**: Expandable effects rack with four knobs: SPEED (0.25x–2x playback rate), CRUSH (waveshaper distortion 0–100), DELAY (0–1s), FEEDBACK (0–90%). Three presets: HAUNTED (slow/distorted/wet), CRUSHED (fast/harsh), SUBMERGED (slow/deep echo).
 - **Waveform visualizer**: Canvas-based real-time waveform + frequency spectrum with anaglyphic blue/red dual-trace rendering, random glitch slice displacement, and jitter artifacts.

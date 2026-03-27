@@ -217,6 +217,9 @@ router.delete("/:roomId/messages/:messageId", requireAuth, async (req, res) => {
       return;
     }
 
+    // Only delete the database row. Media files in object storage are
+    // intentionally preserved forever — audio and video recordings are
+    // never removed from storage even when the message is deleted.
     await db.delete(messagesTable)
       .where(eq(messagesTable.id, messageId));
 

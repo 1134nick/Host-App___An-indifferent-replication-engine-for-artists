@@ -10,7 +10,7 @@ import {
 } from "@workspace/api-client-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, Play, Pause, Loader2, Trash2, Video, Radio, Zap } from "lucide-react";
+import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Video, Radio, Zap } from "lucide-react";
 import { fetchAndDecode, createEchoNode, getAudioContext, type EchoNode } from "../lib/audio-engine";
 import Waveform from "../components/waveform";
 import AmbientDrone from "../components/ambient-drone";
@@ -19,25 +19,27 @@ type PlaybackMode = "single" | "continuous";
 
 function BlobAudioPlayer({
   src,
-  isActive,
   onEnded,
   onPlay,
+  onStop,
   autoPlay,
   playbackRate,
   distortionAmount,
   delayTime,
   delayFeedback,
+  muted,
   onAnalyser,
 }: {
   src: string;
-  isActive?: boolean;
   onEnded?: () => void;
   onPlay?: () => void;
+  onStop?: () => void;
   autoPlay?: boolean;
   playbackRate: number;
   distortionAmount: number;
   delayTime: number;
   delayFeedback: number;
+  muted: boolean;
   onAnalyser?: (a: AnalyserNode | null) => void;
 }) {
   const echoNodeRef = useRef<EchoNode | null>(null);
@@ -101,6 +103,7 @@ function BlobAudioPlayer({
       delayFeedback,
     });
     echoNodeRef.current = node;
+    node.gain.gain.value = muted ? 0 : 1;
     onAnalyser?.(node.analyser);
 
     const ac = getAudioContext();
@@ -112,6 +115,7 @@ function BlobAudioPlayer({
       setProgress(0);
       offsetRef.current = 0;
       onAnalyser?.(null);
+      onStop?.();
       onEnded?.();
     };
 
@@ -127,7 +131,7 @@ function BlobAudioPlayer({
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
-  }, [cleanup, loadBuffer, playbackRate, distortionAmount, delayTime, delayFeedback, onEnded, onPlay, onAnalyser]);
+  }, [cleanup, loadBuffer, playbackRate, distortionAmount, delayTime, delayFeedback, muted, onEnded, onPlay, onStop, onAnalyser]);
 
   const stopPlayback = useCallback(() => {
     if (echoNodeRef.current) {
@@ -137,7 +141,8 @@ function BlobAudioPlayer({
     }
     cleanup();
     setPlaying(false);
-  }, [cleanup, playbackRate]);
+    onStop?.();
+  }, [cleanup, playbackRate, onStop]);
 
   const togglePlay = useCallback(async () => {
     if (playing) {
@@ -157,10 +162,10 @@ function BlobAudioPlayer({
   }, [autoPlay]);
 
   useEffect(() => {
-    if (!isActive && playing) {
-      stopPlayback();
+    if (echoNodeRef.current) {
+      echoNodeRef.current.gain.gain.value = muted ? 0 : 1;
     }
-  }, [isActive, playing, stopPlayback]);
+  }, [muted]);
 
   useEffect(() => {
     if (echoNodeRef.current && playing) {
@@ -258,18 +263,20 @@ function BlobAudioPlayer({
 
 function EchoVideo({
   src,
-  isActive,
   onEnded,
   onPlay,
+  onStop,
   autoPlay,
   playbackRate,
+  muted,
 }: {
   src: string;
-  isActive?: boolean;
   onEnded?: () => void;
   onPlay?: () => void;
+  onStop?: () => void;
   autoPlay?: boolean;
   playbackRate: number;
+  muted: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -278,8 +285,8 @@ function EchoVideo({
     const v = videoRef.current;
     if (!v) return;
     const handlePlay = () => { setPlaying(true); onPlay?.(); };
-    const handlePause = () => setPlaying(false);
-    const handleEnd = () => { setPlaying(false); onEnded?.(); };
+    const handlePause = () => { setPlaying(false); onStop?.(); };
+    const handleEnd = () => { setPlaying(false); onStop?.(); onEnded?.(); };
     v.addEventListener("play", handlePlay);
     v.addEventListener("pause", handlePause);
     v.addEventListener("ended", handleEnd);
@@ -288,7 +295,7 @@ function EchoVideo({
       v.removeEventListener("pause", handlePause);
       v.removeEventListener("ended", handleEnd);
     };
-  }, [onEnded, onPlay]);
+  }, [onEnded, onPlay, onStop]);
 
   useEffect(() => {
     if (autoPlay && videoRef.current) {
@@ -297,16 +304,16 @@ function EchoVideo({
   }, [autoPlay]);
 
   useEffect(() => {
-    if (!isActive && playing && videoRef.current) {
-      videoRef.current.pause();
-    }
-  }, [isActive, playing]);
-
-  useEffect(() => {
     if (videoRef.current) {
       videoRef.current.playbackRate = playbackRate;
     }
   }, [playbackRate]);
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = muted;
+    }
+  }, [muted]);
 
   return (
     <div className={`mt-2 ${playing ? "scanlines" : ""}`}>
@@ -315,6 +322,7 @@ function EchoVideo({
         src={src}
         controls
         preload="metadata"
+        muted={muted}
         className={`max-w-xs max-h-64 border ${playing ? "border-[var(--depth-blue)]" : "border-border/50"}`}
         style={playing ? { boxShadow: "2px 0 0 var(--depth-red), -1px 0 0 var(--depth-blue)" } : {}}
       />
@@ -325,6 +333,7 @@ function EchoVideo({
 type MediaMode = "none" | "camera" | "recording" | "video-recording";
 
 const MAX_VIDEO_SECONDS = 20;
+const TRACK_OPTIONS = [1, 2, 3, Infinity] as const;
 
 export default function Room() {
   const { id } = useParams();
@@ -353,8 +362,11 @@ export default function Room() {
   const [error, setError] = useState<string | null>(null);
 
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("single");
-  const [activeMediaId, setActiveMediaId] = useState<number | null>(null);
+  const [activeMediaIds, setActiveMediaIds] = useState<Set<number>>(new Set());
+  const [mutedIds, setMutedIds] = useState<Set<number>>(new Set());
+  const [maxTracks, setMaxTracks] = useState<number>(Infinity);
   const [transitioning, setTransitioning] = useState(false);
+  const [continuousHead, setContinuousHead] = useState<number | null>(null);
 
   const [speed, setSpeed] = useState(1);
   const [distortion, setDistortion] = useState(0);
@@ -373,6 +385,11 @@ export default function Room() {
   const videoChunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelledRef = useRef(false);
+  const userScrolledRef = useRef(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const prevMessageCountRef = useRef(0);
+
+  const playOrderRef = useRef<number[]>([]);
 
   const mediaMessages = useMemo(() => {
     if (!messages) return [];
@@ -380,33 +397,87 @@ export default function Room() {
   }, [messages]);
 
   const totalMessages = messages?.length || 0;
-  const anyPlaying = activeMediaId !== null;
+  const anyPlaying = activeMediaIds.size > 0;
+  const playingCount = activeMediaIds.size;
+
+  const addActiveMedia = useCallback((msgId: number) => {
+    setActiveMediaIds((prev) => {
+      const next = new Set(prev);
+      if (maxTracks !== Infinity && next.size >= maxTracks) {
+        const oldest = playOrderRef.current.find((id) => next.has(id));
+        if (oldest !== undefined) {
+          next.delete(oldest);
+          playOrderRef.current = playOrderRef.current.filter((id) => id !== oldest);
+        }
+      }
+      next.add(msgId);
+      playOrderRef.current = [...playOrderRef.current.filter((id) => id !== msgId), msgId];
+      return next;
+    });
+  }, [maxTracks]);
+
+  const removeActiveMedia = useCallback((msgId: number) => {
+    setActiveMediaIds((prev) => {
+      const next = new Set(prev);
+      next.delete(msgId);
+      return next;
+    });
+    playOrderRef.current = playOrderRef.current.filter((id) => id !== msgId);
+  }, []);
+
+  const toggleMute = useCallback((msgId: number) => {
+    setMutedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msgId)) next.delete(msgId);
+      else next.add(msgId);
+      return next;
+    });
+  }, []);
 
   const handleMediaEnded = useCallback((msgId: number) => {
-    if (playbackMode === "single") {
-      setActiveMediaId(null);
-      setCurrentAnalyser(null);
-      return;
+    removeActiveMedia(msgId);
+
+    if (playbackMode === "continuous" && continuousHead !== null) {
+      const idx = mediaMessages.findIndex((m) => m.id === msgId);
+      if (idx >= 0 && idx < mediaMessages.length - 1) {
+        const nextId = mediaMessages[idx + 1].id;
+        setTransitioning(true);
+        setTimeout(() => {
+          setContinuousHead(nextId);
+          addActiveMedia(nextId);
+          setTransitioning(false);
+        }, 600);
+      } else {
+        setContinuousHead(null);
+      }
     }
-    const idx = mediaMessages.findIndex((m) => m.id === msgId);
-    if (idx >= 0 && idx < mediaMessages.length - 1) {
-      setTransitioning(true);
-      setTimeout(() => {
-        setActiveMediaId(mediaMessages[idx + 1].id);
-        setTransitioning(false);
-      }, 600);
-    } else {
-      setActiveMediaId(null);
-      setCurrentAnalyser(null);
-    }
-  }, [playbackMode, mediaMessages]);
+  }, [playbackMode, continuousHead, mediaMessages, removeActiveMedia, addActiveMedia]);
 
   const handleMediaPlay = useCallback((msgId: number) => {
-    setActiveMediaId(msgId);
+    addActiveMedia(msgId);
+  }, [addActiveMedia]);
+
+  const handleMediaStop = useCallback((msgId: number) => {
+    removeActiveMedia(msgId);
+  }, [removeActiveMedia]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      userScrolledRef.current = scrollHeight - scrollTop - clientHeight > 80;
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
-    endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
+    const newCount = messages?.length || 0;
+    if (newCount > prevMessageCountRef.current && !userScrolledRef.current) {
+      endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevMessageCountRef.current = newCount;
   }, [messages]);
 
   const stopStream = useCallback(() => {
@@ -639,12 +710,16 @@ export default function Room() {
   const playAll = useCallback(() => {
     if (mediaMessages.length > 0) {
       setPlaybackMode("continuous");
-      setActiveMediaId(mediaMessages[0].id);
+      const firstId = mediaMessages[0].id;
+      setContinuousHead(firstId);
+      addActiveMedia(firstId);
     }
-  }, [mediaMessages]);
+  }, [mediaMessages, addActiveMedia]);
 
   const stopAll = useCallback(() => {
-    setActiveMediaId(null);
+    setActiveMediaIds(new Set());
+    playOrderRef.current = [];
+    setContinuousHead(null);
     setCurrentAnalyser(null);
   }, []);
 
@@ -691,7 +766,24 @@ export default function Room() {
             <Radio className={`w-3 h-3 ${playbackMode === "continuous" ? "animate-pulse" : ""}`} />
             {playbackMode === "continuous" ? "CONTINUOUS" : "SINGLE"}
           </button>
-          {playbackMode === "continuous" && mediaMessages.length > 0 && (
+
+          <div className="flex items-center border border-border">
+            {TRACK_OPTIONS.map((opt) => (
+              <button
+                key={opt === Infinity ? "all" : opt}
+                onClick={() => setMaxTracks(opt)}
+                className={`px-2 py-1.5 text-[10px] font-mono uppercase tracking-widest transition-all ${
+                  maxTracks === opt
+                    ? "bg-[var(--depth-blue)]/10 text-[var(--depth-blue)]"
+                    : "text-muted-foreground hover:text-foreground"
+                } ${opt !== TRACK_OPTIONS[0] ? "border-l border-border" : ""}`}
+              >
+                {opt === Infinity ? "ALL" : opt}
+              </button>
+            ))}
+          </div>
+
+          {mediaMessages.length > 0 && (
             <button
               onClick={playAll}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-border text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground hover:border-foreground transition-all"
@@ -712,14 +804,21 @@ export default function Room() {
           </button>
           <AmbientDrone messageCount={totalMessages} active={true} />
         </div>
-        {anyPlaying && (
-          <button
-            onClick={stopAll}
-            className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-destructive transition-colors"
-          >
-            STOP
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {anyPlaying && (
+            <span className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground">
+              {playingCount} PLAYING
+            </span>
+          )}
+          {anyPlaying && (
+            <button
+              onClick={stopAll}
+              className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-destructive transition-colors"
+            >
+              STOP ALL
+            </button>
+          )}
+        </div>
       </div>
 
       {showFx && (
@@ -733,7 +832,7 @@ export default function Room() {
               step="0.05"
               value={speed}
               onChange={(e) => setSpeed(parseFloat(e.target.value))}
-              className="flex-1 h-1 accent-[var(--depth-blue)] cursor-pointer"
+              className="flex-1 h-1 cursor-pointer"
               style={{ accentColor: "rgba(40,80,180,0.85)" }}
             />
             <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{speed.toFixed(2)}x</span>
@@ -809,7 +908,10 @@ export default function Room() {
         </div>
       )}
 
-      <div className={`flex-1 overflow-y-auto mb-4 pr-2 space-y-3 flex flex-col font-mono text-sm ${anyPlaying ? "scanlines" : ""}`}>
+      <div
+        ref={scrollContainerRef}
+        className={`flex-1 overflow-y-auto mb-4 pr-2 space-y-3 flex flex-col font-mono text-sm ${anyPlaying ? "scanlines" : ""}`}
+      >
         {messages?.length === 0 && (
           <div className="text-center text-muted-foreground italic my-auto text-xs lowercase tracking-widest">
             silence. be the first to speak.
@@ -818,8 +920,10 @@ export default function Room() {
         {messages?.map((msg) => {
           const isSystem = msg.isSystemMessage;
           const isOwn = me?.id != null && msg.userId === me.id;
-          const isThisPlaying = activeMediaId === msg.id;
+          const isThisPlaying = activeMediaIds.has(msg.id);
+          const isThisMuted = mutedIds.has(msg.id);
           const hasMedia = msg.mediaType === "audio" || msg.mediaType === "video";
+          const isContinuousTarget = playbackMode === "continuous" && continuousHead === msg.id;
           return (
             <div
               key={msg.id}
@@ -829,7 +933,7 @@ export default function Room() {
                   : isThisPlaying
                     ? "echo-playing bg-card"
                     : "bg-card border-border"
-              } ${isThisPlaying ? "glitch-msg" : ""} ${transitioning && isThisPlaying ? "echo-transitioning" : ""}`}
+              } ${isThisPlaying ? "glitch-msg" : ""} ${transitioning && isContinuousTarget ? "echo-transitioning" : ""}`}
             >
               <div className="flex justify-between items-start mb-2 text-xs opacity-60 pb-2">
                 <span className={`font-medium tracking-wider ${isThisPlaying ? "echo-label" : ""}`}>
@@ -837,13 +941,13 @@ export default function Room() {
                 </span>
                 <div className="flex items-center gap-2">
                   <span>{new Date(msg.createdAt).toLocaleTimeString()}</span>
-                  {hasMedia && !isThisPlaying && playbackMode === "continuous" && (
+                  {hasMedia && (
                     <button
-                      onClick={() => setActiveMediaId(msg.id)}
-                      className="text-muted-foreground hover:text-[var(--depth-blue)] transition-colors"
-                      title="Play from here"
+                      onClick={() => toggleMute(msg.id)}
+                      className={`transition-colors ${isThisMuted ? "text-destructive" : "text-muted-foreground hover:text-foreground"}`}
+                      title={isThisMuted ? "Unmute" : "Mute"}
                     >
-                      <Play className="w-3 h-3" />
+                      {isThisMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
                     </button>
                   )}
                   {isOwn && !isSystem && (
@@ -871,25 +975,27 @@ export default function Room() {
               {msg.mediaType === "audio" && msg.mediaUrl && (
                 <BlobAudioPlayer
                   src={`/api/storage${msg.mediaUrl}`}
-                  isActive={isThisPlaying || !anyPlaying}
-                  autoPlay={isThisPlaying && playbackMode === "continuous"}
+                  autoPlay={isContinuousTarget && !isThisPlaying}
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
+                  onStop={() => handleMediaStop(msg.id)}
                   playbackRate={speed}
                   distortionAmount={distortion}
                   delayTime={delayTime}
                   delayFeedback={delayFeedback}
+                  muted={isThisMuted}
                   onAnalyser={isThisPlaying ? setCurrentAnalyser : undefined}
                 />
               )}
               {msg.mediaType === "video" && msg.mediaUrl && (
                 <EchoVideo
                   src={`/api/storage${msg.mediaUrl}`}
-                  isActive={isThisPlaying || !anyPlaying}
-                  autoPlay={isThisPlaying && playbackMode === "continuous"}
+                  autoPlay={isContinuousTarget && !isThisPlaying}
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
+                  onStop={() => handleMediaStop(msg.id)}
                   playbackRate={speed}
+                  muted={isThisMuted}
                 />
               )}
             </div>
