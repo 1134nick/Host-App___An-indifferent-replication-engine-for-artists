@@ -484,7 +484,11 @@ export default function Room() {
 
   const handleMediaPlay = useCallback((msgId: number) => {
     addActiveMedia(msgId);
-  }, [addActiveMedia]);
+    if (playbackMode === "continuous" && continuousHead !== null && continuousHead !== msgId) {
+      setContinuousHead(null);
+      setPlaybackMode("single");
+    }
+  }, [addActiveMedia, playbackMode, continuousHead]);
 
   const handleMediaStop = useCallback((msgId: number) => {
     removeActiveMedia(msgId);
@@ -747,6 +751,7 @@ export default function Room() {
     setActiveMediaIds(new Set());
     playOrderRef.current = [];
     setContinuousHead(null);
+    setPlaybackMode("single");
     setCurrentAnalyser(null);
   }, []);
 
