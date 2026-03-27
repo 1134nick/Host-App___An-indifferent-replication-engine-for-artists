@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "q8_bYcYVIlLpTNdeArRhu"
+uri = "file://screenshots/host-app-qr.png"
+type = "image"
+title = "HOST App QR Code"
