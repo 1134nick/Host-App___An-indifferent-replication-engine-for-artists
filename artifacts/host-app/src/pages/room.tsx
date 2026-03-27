@@ -468,8 +468,8 @@ export default function Room() {
       if (idx >= 0 && idx < mediaMessages.length - 1) {
         const nextId = mediaMessages[idx + 1].id;
         setTransitioning(true);
+        setContinuousHead(nextId);
         setTimeout(() => {
-          setContinuousHead(nextId);
           setTransitioning(false);
         }, 600);
       } else {
