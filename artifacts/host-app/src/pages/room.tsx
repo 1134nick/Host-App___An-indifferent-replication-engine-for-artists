@@ -11,6 +11,9 @@ import {
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, Play, Pause, Loader2, Trash2, Video, Radio, Zap } from "lucide-react";
+import { fetchAndDecode, createEchoNode, getAudioContext, type EchoNode } from "../lib/audio-engine";
+import Waveform from "../components/waveform";
+import AmbientDrone from "../components/ambient-drone";
 
 type PlaybackMode = "single" | "continuous";
 
@@ -20,129 +23,170 @@ function BlobAudioPlayer({
   onEnded,
   onPlay,
   autoPlay,
+  playbackRate,
+  distortionAmount,
+  delayTime,
+  delayFeedback,
+  onAnalyser,
 }: {
   src: string;
   isActive?: boolean;
   onEnded?: () => void;
   onPlay?: () => void;
   autoPlay?: boolean;
+  playbackRate: number;
+  distortionAmount: number;
+  delayTime: number;
+  delayFeedback: number;
+  onAnalyser?: (a: AnalyserNode | null) => void;
 }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const echoNodeRef = useRef<EchoNode | null>(null);
+  const bufferRef = useRef<AudioBuffer | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+  const startTimeRef = useRef(0);
+  const offsetRef = useRef(0);
+  const rafRef = useRef<number>(0);
+  const loadedRef = useRef(false);
 
-  useEffect(() => {
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
-  }, [blobUrl]);
+  const cleanup = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (echoNodeRef.current) {
+      try {
+        echoNodeRef.current.source.stop();
+        echoNodeRef.current.source.disconnect();
+        echoNodeRef.current.gain.disconnect();
+        echoNodeRef.current.analyser.disconnect();
+        echoNodeRef.current.distortion.disconnect();
+        echoNodeRef.current.delay.disconnect();
+        echoNodeRef.current.delayGain.disconnect();
+      } catch {}
+      echoNodeRef.current = null;
+    }
+    onAnalyser?.(null);
+  }, [onAnalyser]);
 
-  const loadAudio = useCallback(async () => {
-    if (blobUrl) return blobUrl;
+  useEffect(() => () => cleanup(), [cleanup]);
+
+  const loadBuffer = useCallback(async () => {
+    if (bufferRef.current) return bufferRef.current;
     setLoading(true);
     setError(false);
     try {
-      const resp = await fetch(src);
-      if (!resp.ok) throw new Error("fetch failed");
-      const arrayBuf = await resp.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuf);
-      let detectedType = resp.headers.get("content-type") || "audio/webm";
-      if (bytes.length > 8) {
-        if (bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
-          detectedType = "audio/webm";
-        } else if (bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
-          detectedType = "audio/mp4";
-        } else if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
-          detectedType = "audio/ogg";
-        }
-      }
-      const blob = new Blob([arrayBuf], { type: detectedType });
-      const url = URL.createObjectURL(blob);
-      setBlobUrl(url);
-      return url;
+      const buf = await fetchAndDecode(src);
+      bufferRef.current = buf;
+      setDuration(buf.duration);
+      loadedRef.current = true;
+      return buf;
     } catch {
       setError(true);
       return null;
     } finally {
       setLoading(false);
     }
-  }, [src, blobUrl]);
+  }, [src]);
+
+  const startPlayback = useCallback(async (fromOffset = 0) => {
+    cleanup();
+    const buf = bufferRef.current || (await loadBuffer());
+    if (!buf) return;
+
+    const node = createEchoNode(buf, {
+      playbackRate,
+      distortionAmount,
+      delayTime,
+      delayFeedback,
+    });
+    echoNodeRef.current = node;
+    onAnalyser?.(node.analyser);
+
+    const ac = getAudioContext();
+    startTimeRef.current = ac.currentTime;
+    offsetRef.current = fromOffset;
+
+    node.source.onended = () => {
+      setPlaying(false);
+      setProgress(0);
+      offsetRef.current = 0;
+      onAnalyser?.(null);
+      onEnded?.();
+    };
+
+    node.source.start(0, fromOffset);
+    setPlaying(true);
+    onPlay?.();
+
+    const tick = () => {
+      if (!echoNodeRef.current) return;
+      const ac2 = getAudioContext();
+      const elapsed = (ac2.currentTime - startTimeRef.current) * playbackRate + fromOffset;
+      setProgress(Math.min(elapsed, buf.duration));
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  }, [cleanup, loadBuffer, playbackRate, distortionAmount, delayTime, delayFeedback, onEnded, onPlay, onAnalyser]);
+
+  const stopPlayback = useCallback(() => {
+    if (echoNodeRef.current) {
+      const ac = getAudioContext();
+      const elapsed = (ac.currentTime - startTimeRef.current) * playbackRate + offsetRef.current;
+      offsetRef.current = elapsed;
+    }
+    cleanup();
+    setPlaying(false);
+  }, [cleanup, playbackRate]);
 
   const togglePlay = useCallback(async () => {
-    if (!blobUrl) {
-      await loadAudio();
-      return;
-    }
-    const audio = audioRef.current;
-    if (!audio) return;
     if (playing) {
-      audio.pause();
+      stopPlayback();
     } else {
-      onPlay?.();
-      audio.play();
+      if (!loadedRef.current) {
+        await loadBuffer();
+      }
+      await startPlayback(offsetRef.current);
     }
-  }, [blobUrl, playing, loadAudio, onPlay]);
+  }, [playing, stopPlayback, startPlayback, loadBuffer]);
 
   useEffect(() => {
-    if (!blobUrl) return;
-    const audio = new Audio(blobUrl);
-    audioRef.current = audio;
-
-    const onMeta = () => setDuration(audio.duration);
-    const onTime = () => setProgress(audio.currentTime);
-    const handlePlay = () => { setPlaying(true); onPlay?.(); };
-    const onPause = () => setPlaying(false);
-    const handleEnd = () => { setPlaying(false); setProgress(0); onEnded?.(); };
-    const onErr = () => {
-      if (audio.networkState === audio.NETWORK_NO_SOURCE) setError(true);
-    };
-
-    audio.addEventListener("loadedmetadata", onMeta);
-    audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("play", handlePlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("ended", handleEnd);
-    audio.addEventListener("error", onErr);
-
-    if (!autoPlay) {
-      audio.play().catch(() => {});
+    if (autoPlay && !playing) {
+      startPlayback(0);
     }
-
-    return () => {
-      audio.removeEventListener("loadedmetadata", onMeta);
-      audio.removeEventListener("timeupdate", onTime);
-      audio.removeEventListener("play", handlePlay);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("ended", handleEnd);
-      audio.removeEventListener("error", onErr);
-      audio.pause();
-      audio.src = "";
-    };
-  }, [blobUrl]);
+  }, [autoPlay]);
 
   useEffect(() => {
-    if (autoPlay && !blobUrl) {
-      loadAudio().then((url) => {
-        if (url) {
-          const audio = audioRef.current;
-          if (audio) audio.play().catch(() => {});
-        }
-      });
+    if (!isActive && playing) {
+      stopPlayback();
     }
-    if (autoPlay && blobUrl && audioRef.current && !playing) {
-      audioRef.current.play().catch(() => {});
-    }
-  }, [autoPlay, blobUrl, loadAudio]);
+  }, [isActive, playing, stopPlayback]);
 
   useEffect(() => {
-    if (!isActive && playing && audioRef.current) {
-      audioRef.current.pause();
+    if (echoNodeRef.current && playing) {
+      echoNodeRef.current.source.playbackRate.value = playbackRate;
     }
-  }, [isActive, playing]);
+  }, [playbackRate, playing]);
+
+  useEffect(() => {
+    if (echoNodeRef.current && playing && distortionAmount > 0) {
+      const samples = 44100;
+      const curve = new Float32Array(samples);
+      const deg = Math.PI / 180;
+      for (let i = 0; i < samples; i++) {
+        const x = (i * 2) / samples - 1;
+        curve[i] = ((3 + distortionAmount) * x * 20 * deg) / (Math.PI + distortionAmount * Math.abs(x));
+      }
+      echoNodeRef.current.distortion.curve = curve;
+    }
+  }, [distortionAmount, playing]);
+
+  useEffect(() => {
+    if (echoNodeRef.current && playing) {
+      echoNodeRef.current.delay.delayTime.value = delayTime;
+      echoNodeRef.current.delayGain.gain.value = delayFeedback;
+    }
+  }, [delayTime, delayFeedback, playing]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -151,11 +195,16 @@ function BlobAudioPlayer({
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const audio = audioRef.current;
-    if (!audio || !duration) return;
+    if (!duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
-    audio.currentTime = pct * duration;
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const seekTo = pct * duration;
+    if (playing) {
+      startPlayback(seekTo);
+    } else {
+      offsetRef.current = seekTo;
+      setProgress(seekTo);
+    }
   };
 
   if (error) {
@@ -168,39 +217,41 @@ function BlobAudioPlayer({
   }
 
   return (
-    <div className={`flex items-center gap-2 mt-2 ${playing ? "corrupt-text" : ""}`}>
-      <button
-        onClick={togglePlay}
-        disabled={loading}
-        className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-        style={{ background: playing ? "var(--depth-blue)" : "#333", color: "#f5f0e8" }}
-      >
-        {loading ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        ) : playing ? (
-          <Pause className="w-3.5 h-3.5" />
-        ) : (
-          <Play className="w-3.5 h-3.5 ml-0.5" />
-        )}
-      </button>
-      <div
-        className="flex-1 h-1.5 rounded-full cursor-pointer"
-        style={{ background: "#444" }}
-        onClick={handleSeek}
-      >
+    <div className={`mt-2 ${playing ? "corrupt-text" : ""}`}>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={togglePlay}
+          disabled={loading}
+          className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: playing ? "var(--depth-blue)" : "#333", color: "#f5f0e8" }}
+        >
+          {loading ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : playing ? (
+            <Pause className="w-3.5 h-3.5" />
+          ) : (
+            <Play className="w-3.5 h-3.5 ml-0.5" />
+          )}
+        </button>
         <div
-          className="h-full rounded-full"
-          style={{
-            background: playing ? "var(--depth-blue)" : "#f5f0e8",
-            width: duration > 0 ? `${(progress / duration) * 100}%` : "0%",
-            transition: "width 0.1s linear",
-            boxShadow: playing ? "0 0 6px var(--depth-blue)" : "none",
-          }}
-        />
+          className="flex-1 h-1.5 rounded-full cursor-pointer"
+          style={{ background: "#444" }}
+          onClick={handleSeek}
+        >
+          <div
+            className="h-full rounded-full"
+            style={{
+              background: playing ? "var(--depth-blue)" : "#f5f0e8",
+              width: duration > 0 ? `${(progress / duration) * 100}%` : "0%",
+              transition: "width 0.05s linear",
+              boxShadow: playing ? "0 0 6px var(--depth-blue)" : "none",
+            }}
+          />
+        </div>
+        <span className="text-xs shrink-0" style={{ color: playing ? "var(--depth-blue)" : "#999", fontFamily: "var(--font-mono)" }}>
+          {duration > 0 ? `${formatTime(progress)} / ${formatTime(duration)}` : "0:00"}
+        </span>
       </div>
-      <span className="text-xs shrink-0" style={{ color: playing ? "var(--depth-blue)" : "#999", fontFamily: "var(--font-mono)" }}>
-        {duration > 0 ? `${formatTime(progress)} / ${formatTime(duration)}` : "0:00"}
-      </span>
     </div>
   );
 }
@@ -211,12 +262,14 @@ function EchoVideo({
   onEnded,
   onPlay,
   autoPlay,
+  playbackRate,
 }: {
   src: string;
   isActive?: boolean;
   onEnded?: () => void;
   onPlay?: () => void;
   autoPlay?: boolean;
+  playbackRate: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -248,6 +301,12 @@ function EchoVideo({
       videoRef.current.pause();
     }
   }, [isActive, playing]);
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = playbackRate;
+    }
+  }, [playbackRate]);
 
   return (
     <div className={`mt-2 ${playing ? "scanlines" : ""}`}>
@@ -295,6 +354,15 @@ export default function Room() {
 
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("single");
   const [activeMediaId, setActiveMediaId] = useState<number | null>(null);
+  const [transitioning, setTransitioning] = useState(false);
+
+  const [speed, setSpeed] = useState(1);
+  const [distortion, setDistortion] = useState(0);
+  const [delayTime, setDelayTime] = useState(0);
+  const [delayFeedback, setDelayFeedback] = useState(0);
+  const [showFx, setShowFx] = useState(false);
+
+  const [currentAnalyser, setCurrentAnalyser] = useState<AnalyserNode | null>(null);
 
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -311,28 +379,31 @@ export default function Room() {
     return messages.filter((m) => m.mediaType === "audio" || m.mediaType === "video");
   }, [messages]);
 
+  const totalMessages = messages?.length || 0;
   const anyPlaying = activeMediaId !== null;
 
   const handleMediaEnded = useCallback((msgId: number) => {
     if (playbackMode === "single") {
       setActiveMediaId(null);
+      setCurrentAnalyser(null);
       return;
     }
     const idx = mediaMessages.findIndex((m) => m.id === msgId);
     if (idx >= 0 && idx < mediaMessages.length - 1) {
-      setActiveMediaId(mediaMessages[idx + 1].id);
+      setTransitioning(true);
+      setTimeout(() => {
+        setActiveMediaId(mediaMessages[idx + 1].id);
+        setTransitioning(false);
+      }, 600);
     } else {
       setActiveMediaId(null);
+      setCurrentAnalyser(null);
     }
   }, [playbackMode, mediaMessages]);
 
   const handleMediaPlay = useCallback((msgId: number) => {
-    if (playbackMode === "single") {
-      setActiveMediaId(msgId);
-    } else {
-      setActiveMediaId(msgId);
-    }
-  }, [playbackMode]);
+    setActiveMediaId(msgId);
+  }, []);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -572,6 +643,11 @@ export default function Room() {
     }
   }, [mediaMessages]);
 
+  const stopAll = useCallback(() => {
+    setActiveMediaId(null);
+    setCurrentAnalyser(null);
+  }, []);
+
   if (isLoading) {
     return <div className="flex-1 flex items-center justify-center font-mono text-muted-foreground text-xs">...</div>;
   }
@@ -582,7 +658,7 @@ export default function Room() {
 
   return (
     <div className={`flex-1 flex flex-col max-w-5xl mx-auto w-full px-4 py-6 h-[calc(100vh-3.5rem)] ${anyPlaying ? "glitch-active" : ""}`}>
-      <header className="flex justify-between items-center mb-6 pb-4 shrink-0">
+      <header className="flex justify-between items-center mb-4 pb-3 shrink-0">
         <Link href="/dashboard" className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="w-4 h-4" />
           Back
@@ -596,8 +672,14 @@ export default function Room() {
 
       <div className="weave-divider w-full mb-2 shrink-0" />
 
-      <div className="flex items-center justify-between mb-3 shrink-0">
-        <div className="flex items-center gap-3">
+      {currentAnalyser && anyPlaying && (
+        <div className={`mb-2 shrink-0 border border-border/30 bg-black/40 px-2 py-1 ${transitioning ? "echo-transitioning" : ""}`}>
+          <Waveform analyser={currentAnalyser} playing={anyPlaying} height={36} />
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mb-2 shrink-0 flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setPlaybackMode(playbackMode === "single" ? "continuous" : "single")}
             className={`flex items-center gap-1.5 px-3 py-1.5 border text-[10px] font-mono uppercase tracking-widest transition-all ${
@@ -605,7 +687,6 @@ export default function Room() {
                 ? "border-[var(--depth-blue)] text-[var(--depth-blue)] bg-[var(--depth-blue)]/5"
                 : "border-border text-muted-foreground hover:text-foreground"
             }`}
-            title={playbackMode === "continuous" ? "Switch to single echo" : "Switch to continuous flow"}
           >
             <Radio className={`w-3 h-3 ${playbackMode === "continuous" ? "animate-pulse" : ""}`} />
             {playbackMode === "continuous" ? "CONTINUOUS" : "SINGLE"}
@@ -619,16 +700,114 @@ export default function Room() {
               PLAY ALL
             </button>
           )}
+          <button
+            onClick={() => setShowFx(!showFx)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 border text-[10px] font-mono uppercase tracking-widest transition-all ${
+              showFx
+                ? "border-[var(--depth-red)] text-[var(--depth-red)]"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            FX
+          </button>
+          <AmbientDrone messageCount={totalMessages} active={true} />
         </div>
         {anyPlaying && (
           <button
-            onClick={() => setActiveMediaId(null)}
+            onClick={stopAll}
             className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground hover:text-destructive transition-colors"
           >
             STOP
           </button>
         )}
       </div>
+
+      {showFx && (
+        <div className="shrink-0 mb-2 p-3 border border-border/50 bg-card/50 space-y-2">
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">SPEED</label>
+            <input
+              type="range"
+              min="0.25"
+              max="2"
+              step="0.05"
+              value={speed}
+              onChange={(e) => setSpeed(parseFloat(e.target.value))}
+              className="flex-1 h-1 accent-[var(--depth-blue)] cursor-pointer"
+              style={{ accentColor: "rgba(40,80,180,0.85)" }}
+            />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{speed.toFixed(2)}x</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">CRUSH</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value={distortion}
+              onChange={(e) => setDistortion(parseFloat(e.target.value))}
+              className="flex-1 h-1 cursor-pointer"
+              style={{ accentColor: "rgba(190,40,40,0.85)" }}
+            />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{distortion}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">DELAY</label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={delayTime}
+              onChange={(e) => setDelayTime(parseFloat(e.target.value))}
+              className="flex-1 h-1 cursor-pointer"
+              style={{ accentColor: "rgba(40,80,180,0.85)" }}
+            />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{delayTime.toFixed(2)}s</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">FEEDBACK</label>
+            <input
+              type="range"
+              min="0"
+              max="0.9"
+              step="0.01"
+              value={delayFeedback}
+              onChange={(e) => setDelayFeedback(parseFloat(e.target.value))}
+              className="flex-1 h-1 cursor-pointer"
+              style={{ accentColor: "rgba(190,40,40,0.65)" }}
+            />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{(delayFeedback * 100).toFixed(0)}%</span>
+          </div>
+          <div className="flex gap-2 mt-1">
+            <button
+              onClick={() => { setSpeed(1); setDistortion(0); setDelayTime(0); setDelayFeedback(0); }}
+              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
+            >
+              RESET
+            </button>
+            <button
+              onClick={() => { setSpeed(0.5); setDistortion(40); setDelayTime(0.3); setDelayFeedback(0.5); }}
+              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
+            >
+              HAUNTED
+            </button>
+            <button
+              onClick={() => { setSpeed(1.5); setDistortion(80); setDelayTime(0.1); setDelayFeedback(0.3); }}
+              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
+            >
+              CRUSHED
+            </button>
+            <button
+              onClick={() => { setSpeed(0.75); setDistortion(10); setDelayTime(0.6); setDelayFeedback(0.7); }}
+              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
+            >
+              SUBMERGED
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className={`flex-1 overflow-y-auto mb-4 pr-2 space-y-3 flex flex-col font-mono text-sm ${anyPlaying ? "scanlines" : ""}`}>
         {messages?.length === 0 && (
@@ -650,7 +829,7 @@ export default function Room() {
                   : isThisPlaying
                     ? "echo-playing bg-card"
                     : "bg-card border-border"
-              } ${isThisPlaying ? "glitch-msg" : ""}`}
+              } ${isThisPlaying ? "glitch-msg" : ""} ${transitioning && isThisPlaying ? "echo-transitioning" : ""}`}
             >
               <div className="flex justify-between items-start mb-2 text-xs opacity-60 pb-2">
                 <span className={`font-medium tracking-wider ${isThisPlaying ? "echo-label" : ""}`}>
@@ -696,6 +875,11 @@ export default function Room() {
                   autoPlay={isThisPlaying && playbackMode === "continuous"}
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
+                  playbackRate={speed}
+                  distortionAmount={distortion}
+                  delayTime={delayTime}
+                  delayFeedback={delayFeedback}
+                  onAnalyser={isThisPlaying ? setCurrentAnalyser : undefined}
                 />
               )}
               {msg.mediaType === "video" && msg.mediaUrl && (
@@ -705,6 +889,7 @@ export default function Room() {
                   autoPlay={isThisPlaying && playbackMode === "continuous"}
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
+                  playbackRate={speed}
                 />
               )}
             </div>

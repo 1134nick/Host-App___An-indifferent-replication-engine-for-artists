@@ -110,7 +110,12 @@ Members can send photos, voice messages, and short videos in rooms. All identiti
 - **Object storage**: Replit App Storage (GCS bucket), presigned PUT URLs, served back via `/api/storage/objects/*` with Range request support
 - **Audio playback**: BlobAudioPlayer component fetches audio as blob, detects format from magic bytes (MP4/WebM/OGG), creates blob URL for reliable playback
 - **Playback modes**: Toggle between SINGLE (one echo at a time, manual) and CONTINUOUS (echoes chain automatically — when one ends, the next media message starts). "PLAY ALL" starts from the first echo in continuous mode.
-- **Glitch effects**: When media plays, the feed activates visual glitch effects — ambient jitter, scanline overlay, RGB split on playing messages, corrupt text effects. Aesthetic: Yeezus-era distortion meets Arca mutant beauty.
+- **Web Audio API engine**: All audio routed through Web Audio API graph: source → distortion (waveshaper) → delay (feedback loop) → gain → analyser → destination. Enables real-time sonic manipulation.
+- **FX panel**: Expandable effects rack with four knobs: SPEED (0.25x–2x playback rate), CRUSH (waveshaper distortion 0–100), DELAY (0–1s), FEEDBACK (0–90%). Three presets: HAUNTED (slow/distorted/wet), CRUSHED (fast/harsh), SUBMERGED (slow/deep echo).
+- **Waveform visualizer**: Canvas-based real-time waveform + frequency spectrum with anaglyphic blue/red dual-trace rendering, random glitch slice displacement, and jitter artifacts.
+- **Ambient drone**: Generative low-frequency oscillator layer (3 detuned oscillators + LFO modulation + stereo panning). Intensity scales with message count in room. Activatable via AMBIENT/DRONE toggle.
+- **Glitch transitions**: 600ms corrupted transition effect between echoes in continuous mode — brightness/contrast/hue-rotate/blur/skew animation during crossover.
+- **Glitch effects**: When media plays, the feed activates visual glitch effects — ambient jitter, scanline overlay, RGB split on playing messages, corrupt text effects.
 - **Echo states**: Playing messages get blue/red depth border glow, text corruption animation, and the message card flickers subtly. Images in the feed shift to luminosity blend mode during playback.
 
 ## Member Channels
