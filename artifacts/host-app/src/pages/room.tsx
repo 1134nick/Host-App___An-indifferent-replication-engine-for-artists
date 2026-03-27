@@ -342,12 +342,16 @@ export default function Room() {
 
   const playOrderRef = useRef<number[]>([]);
 
-  const mediaMessages = useMemo(() => {
+  const displayMessages = useMemo(() => {
     if (!messages) return [];
-    return messages.filter((m) => m.mediaType === "audio");
+    return messages.filter((m) => !m.mediaType || m.mediaType === "audio");
   }, [messages]);
 
-  const totalMessages = messages?.length || 0;
+  const mediaMessages = useMemo(() => {
+    return displayMessages.filter((m) => m.mediaType === "audio");
+  }, [displayMessages]);
+
+  const totalMessages = displayMessages.length;
   const anyPlaying = activeMediaIds.size > 0;
   const playingCount = activeMediaIds.size;
 
@@ -505,12 +509,12 @@ export default function Room() {
     );
   }, [roomId, deleteMessageMutation, queryClient]);
 
-  const uploadAndSend = useCallback(async (mediaBlob: Blob, mediaType: "image" | "audio") => {
+  const uploadAndSend = useCallback(async (mediaBlob: Blob) => {
     setIsUploading(true);
     setError(null);
     try {
-      const mime = mediaBlob.type || (mediaType === "audio" ? "audio/webm" : "image/jpeg");
-      const ext = mediaType === "image" ? "jpg" : mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
+      const mime = mediaBlob.type || "audio/webm";
+      const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
       const urlData = await requestUploadUrlMutation.mutateAsync({
         data: {
           name: `capture.${ext}`,
@@ -533,7 +537,7 @@ export default function Room() {
             roomId,
             data: {
               content: content.trim() || null,
-              mediaType,
+              mediaType: "audio",
               mediaUrl: urlData.objectPath,
             },
           },
@@ -557,7 +561,7 @@ export default function Room() {
 
   const handleSendText = (e: React.FormEvent) => {
     e.preventDefault();
-    if (capturedAudio) { uploadAndSend(capturedAudio, "audio"); return; }
+    if (capturedAudio) { uploadAndSend(capturedAudio); return; }
     if (!content.trim()) return;
     sendMessageMutation.mutate(
       { roomId, data: { content } },
@@ -789,12 +793,12 @@ export default function Room() {
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto mb-4 pr-2 space-y-3 flex flex-col font-mono text-sm"
       >
-        {messages?.length === 0 && (
+        {displayMessages.length === 0 && (
           <div className="text-center text-muted-foreground italic my-auto text-xs lowercase tracking-widest">
             silence. be the first to speak.
           </div>
         )}
-        {messages?.map((msg) => {
+        {displayMessages.map((msg) => {
           const isSystem = msg.isSystemMessage;
           const isOwn = me?.id != null && msg.userId === me.id;
           const isThisPlaying = activeMediaIds.has(msg.id);
@@ -839,16 +843,6 @@ export default function Room() {
                 </div>
               </div>
               {msg.content && <p className={`whitespace-pre-wrap text-foreground mb-2 ${isThisPlaying ? "corrupt-text" : ""}`}>{msg.content}</p>}
-              {msg.mediaType === "image" && msg.mediaUrl && (
-                <div className="mt-2">
-                  <img
-                    src={`/api/storage${msg.mediaUrl}`}
-                    alt="Transmitted image"
-                    className={`max-w-xs max-h-64 object-contain border border-border/50 ${anyPlaying ? "mix-blend-luminosity" : ""}`}
-                    loading="lazy"
-                  />
-                </div>
-              )}
               {msg.mediaType === "audio" && msg.mediaUrl && (
                 <BlobAudioPlayer
                   src={`/api/storage${msg.mediaUrl}`}
