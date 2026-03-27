@@ -94,45 +94,47 @@ function BlobAudioPlayer({
   }, [src]);
 
   const startPlayback = useCallback(async (fromOffset = 0) => {
-    cleanup();
-    const buf = bufferRef.current || (await loadBuffer());
-    if (!buf) return;
+    try {
+      cleanup();
+      const buf = bufferRef.current || (await loadBuffer());
+      if (!buf) return;
 
-    const node = createEchoNode(buf, {
-      playbackRate,
-      distortionAmount,
-      delayTime,
-      delayFeedback,
-    });
-    echoNodeRef.current = node;
-    node.gain.gain.value = muted ? 0 : 1;
-    onAnalyser?.(node.analyser);
+      const node = createEchoNode(buf, {
+        playbackRate,
+        distortionAmount,
+        delayTime,
+        delayFeedback,
+      });
+      echoNodeRef.current = node;
+      node.gain.gain.value = muted ? 0 : 1;
+      onAnalyser?.(node.analyser);
 
-    const ac = getAudioContext();
-    startTimeRef.current = ac.currentTime;
-    offsetRef.current = fromOffset;
+      const ac = getAudioContext();
+      startTimeRef.current = ac.currentTime;
+      offsetRef.current = fromOffset;
 
-    node.source.onended = () => {
-      setPlaying(false);
-      setProgress(0);
-      offsetRef.current = 0;
-      onAnalyser?.(null);
-      onStop?.();
-      onEnded?.();
-    };
+      node.source.onended = () => {
+        setPlaying(false);
+        setProgress(0);
+        offsetRef.current = 0;
+        onAnalyser?.(null);
+        onStop?.();
+        onEnded?.();
+      };
 
-    node.source.start(0, fromOffset);
-    setPlaying(true);
-    onPlay?.();
+      node.source.start(0, fromOffset);
+      setPlaying(true);
+      onPlay?.();
 
-    const tick = () => {
-      if (!echoNodeRef.current) return;
-      const ac2 = getAudioContext();
-      const elapsed = (ac2.currentTime - startTimeRef.current) * playbackRate + fromOffset;
-      setProgress(Math.min(elapsed, buf.duration));
+      const tick = () => {
+        if (!echoNodeRef.current) return;
+        const ac2 = getAudioContext();
+        const elapsed = (ac2.currentTime - startTimeRef.current) * playbackRate + fromOffset;
+        setProgress(Math.min(elapsed, buf.duration));
+        rafRef.current = requestAnimationFrame(tick);
+      };
       rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
+    } catch {}
   }, [cleanup, loadBuffer, playbackRate, distortionAmount, delayTime, delayFeedback, muted, onEnded, onPlay, onStop, onAnalyser]);
 
   const stopPlayback = useCallback(() => {
@@ -147,19 +149,21 @@ function BlobAudioPlayer({
   }, [cleanup, playbackRate, onStop]);
 
   const togglePlay = useCallback(async () => {
-    if (playing) {
-      stopPlayback();
-    } else {
-      if (!loadedRef.current) {
-        await loadBuffer();
+    try {
+      if (playing) {
+        stopPlayback();
+      } else {
+        if (!loadedRef.current) {
+          await loadBuffer();
+        }
+        await startPlayback(offsetRef.current);
       }
-      await startPlayback(offsetRef.current);
-    }
+    } catch {}
   }, [playing, stopPlayback, startPlayback, loadBuffer]);
 
   useEffect(() => {
     if (autoPlay && !playing) {
-      startPlayback(0);
+      startPlayback(0).catch(() => {});
     }
   }, [autoPlay]);
 
