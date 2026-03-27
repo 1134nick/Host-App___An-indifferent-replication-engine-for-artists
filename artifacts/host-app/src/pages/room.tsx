@@ -631,15 +631,7 @@ export default function Room() {
 
   const handleMediaPlay = useCallback((msgId: number) => {
     addActiveMedia(msgId);
-    if (playbackMode === "continuous") {
-      if (continuousHead === null) {
-        setContinuousHead(msgId);
-      } else if (continuousHead !== msgId) {
-        setContinuousHead(null);
-        setPlaybackMode("single");
-      }
-    }
-  }, [addActiveMedia, playbackMode, continuousHead]);
+  }, [addActiveMedia]);
 
   const handleMediaStop = useCallback((msgId: number) => {
     removeActiveMedia(msgId);
@@ -893,9 +885,7 @@ export default function Room() {
 
   const playAll = useCallback(() => {
     if (mediaMessages.length > 0) {
-      setPlaybackMode("single");
       setContinuousHead(null);
-      setMaxTracks(Infinity);
       const ids = mediaMessages.map((m) => m.id);
       setActiveMediaIds(new Set<number>(ids));
       playOrderRef.current = ids;
@@ -906,7 +896,6 @@ export default function Room() {
     setActiveMediaIds(new Set());
     playOrderRef.current = [];
     setContinuousHead(null);
-    setPlaybackMode("single");
     analyserMapRef.current.clear();
     mergedGainsRef.current.forEach((g) => { try { g.disconnect(); } catch {} });
     mergedGainsRef.current = [];
