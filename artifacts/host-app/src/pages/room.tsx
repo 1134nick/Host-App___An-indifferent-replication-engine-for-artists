@@ -10,7 +10,7 @@ import {
 } from "@workspace/api-client-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Mic, MicOff, X, Send, ImageIcon, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Video, Radio, Zap } from "lucide-react";
+import { ArrowLeft, Mic, MicOff, X, Send, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Radio, Zap } from "lucide-react";
 import { fetchAndDecode, createEchoNode, getAudioContext, type EchoNode } from "../lib/audio-engine";
 import Waveform from "../components/waveform";
 import AmbientDrone from "../components/ambient-drone";
@@ -288,122 +288,7 @@ function BlobAudioPlayer({
   );
 }
 
-function EchoVideo({
-  src,
-  onEnded,
-  onPlay,
-  onStop,
-  autoPlay,
-  isActive,
-  playbackRate,
-  muted,
-  distortionAmount,
-  delayTime,
-  delayFeedback,
-}: {
-  src: string;
-  onEnded?: () => void;
-  onPlay?: () => void;
-  onStop?: () => void;
-  autoPlay?: boolean;
-  isActive: boolean;
-  playbackRate: number;
-  muted: boolean;
-  distortionAmount: number;
-  delayTime: number;
-  delayFeedback: number;
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
-
-  const onPlayRef = useRef(onPlay);
-  const onStopRef = useRef(onStop);
-  const onEndedRef = useRef(onEnded);
-  onPlayRef.current = onPlay;
-  onStopRef.current = onStop;
-  onEndedRef.current = onEnded;
-
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    const handlePlay = () => { setPlaying(true); onPlayRef.current?.(); };
-    const handlePause = () => { setPlaying(false); onStopRef.current?.(); };
-    const handleEnd = () => { setPlaying(false); onStopRef.current?.(); onEndedRef.current?.(); };
-    v.addEventListener("play", handlePlay);
-    v.addEventListener("pause", handlePause);
-    v.addEventListener("ended", handleEnd);
-    return () => {
-      v.removeEventListener("play", handlePlay);
-      v.removeEventListener("pause", handlePause);
-      v.removeEventListener("ended", handleEnd);
-    };
-  }, [src]);
-
-  useEffect(() => {
-    if (autoPlay && videoRef.current) {
-      videoRef.current.play().catch(() => {});
-    }
-  }, [autoPlay]);
-
-  const playingRef = useRef(false);
-  playingRef.current = playing;
-
-  useEffect(() => {
-    if (!isActive && playingRef.current && videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.currentTime = 0;
-    }
-  }, [isActive]);
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.playbackRate = playbackRate;
-    }
-  }, [playbackRate]);
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = muted;
-    }
-  }, [muted]);
-
-  const crush = distortionAmount / 100;
-  const wet = delayFeedback;
-  const videoFilter = playing
-    ? [
-        crush > 0.05 ? `contrast(${1 + crush * 1.2})` : "",
-        crush > 0.05 ? `saturate(${1 + crush * 2})` : "",
-        crush > 0.3 ? `hue-rotate(${crush * 40}deg)` : "",
-        delayTime > 0.05 ? `blur(${delayTime * 1.5}px)` : "",
-        wet > 0.1 ? `brightness(${1 - wet * 0.3})` : "",
-      ].filter(Boolean).join(" ") || "none"
-    : "none";
-
-  return (
-    <div className={`mt-2 ${playing ? "scanlines" : ""}`}>
-      <video
-        ref={videoRef}
-        src={src}
-        controls
-        preload="metadata"
-        playsInline
-        muted={muted}
-        className={`max-w-xs max-h-64 border ${playing ? "border-[var(--depth-blue)]" : "border-border/50"}`}
-        style={{
-          ...(playing ? {
-            boxShadow: `${2 + crush * 4}px 0 0 var(--depth-red), ${-1 - crush * 3}px 0 0 var(--depth-blue)`,
-            filter: videoFilter,
-            transition: "filter 0.3s ease",
-          } : {}),
-        }}
-      />
-    </div>
-  );
-}
-
-type MediaMode = "none" | "camera" | "recording" | "video-recording";
-
-const MAX_VIDEO_SECONDS = 20;
+type MediaMode = "none" | "recording";
 const TRACK_OPTIONS = [1, 2, 3, Infinity] as const;
 
 export default function Room() {
@@ -424,9 +309,7 @@ export default function Room() {
 
   const [content, setContent] = useState("");
   const [mediaMode, setMediaMode] = useState<MediaMode>("none");
-  const [capturedPhoto, setCapturedPhoto] = useState<Blob | null>(null);
   const [capturedAudio, setCapturedAudio] = useState<Blob | null>(null);
-  const [capturedVideo, setCapturedVideo] = useState<Blob | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -448,12 +331,9 @@ export default function Room() {
   const [currentAnalyser, setCurrentAnalyser] = useState<AnalyserNode | null>(null);
 
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
-  const videoChunksRef = useRef<BlobPart[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelledRef = useRef(false);
   const userScrolledRef = useRef(false);
@@ -464,7 +344,7 @@ export default function Room() {
 
   const mediaMessages = useMemo(() => {
     if (!messages) return [];
-    return messages.filter((m) => m.mediaType === "audio" || m.mediaType === "video");
+    return messages.filter((m) => m.mediaType === "audio");
   }, [messages]);
 
   const totalMessages = messages?.length || 0;
@@ -565,9 +445,7 @@ export default function Room() {
       mediaRecorderRef.current.stop();
     }
     mediaRecorderRef.current = null;
-    setCapturedPhoto(null);
     setCapturedAudio(null);
-    setCapturedVideo(null);
     setMediaMode("none");
     setIsRecording(false);
     setRecordingSeconds(0);
@@ -577,39 +455,6 @@ export default function Room() {
   }, [stopStream]);
 
   useEffect(() => () => { stopStream(); if (timerRef.current) clearInterval(timerRef.current); }, [stopStream]);
-
-  const openCamera = useCallback(async () => {
-    setError(null);
-    clearCaptures();
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
-      streamRef.current = stream;
-      setMediaMode("camera");
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play();
-        }
-      }, 100);
-    } catch {
-      setError("Camera access denied.");
-    }
-  }, [clearCaptures]);
-
-  const capturePhoto = useCallback(() => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    canvas.getContext("2d")?.drawImage(video, 0, 0);
-    canvas.toBlob((blob) => {
-      if (blob) {
-        setCapturedPhoto(blob);
-        stopStream();
-      }
-    }, "image/jpeg", 0.85);
-  }, [stopStream]);
 
   const startRecording = useCallback(async () => {
     setError(null);
@@ -649,60 +494,6 @@ export default function Room() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   }, []);
 
-  const startVideoRecording = useCallback(async () => {
-    setError(null);
-    clearCaptures();
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
-      streamRef.current = stream;
-      setMediaMode("video-recording");
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play();
-        }
-      }, 100);
-
-      videoChunksRef.current = [];
-      const videoMimeOptions = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
-      const supportedMime = videoMimeOptions.find(m => MediaRecorder.isTypeSupported(m)) || "";
-      const recorder = supportedMime
-        ? new MediaRecorder(stream, { mimeType: supportedMime })
-        : new MediaRecorder(stream);
-      const actualMime = recorder.mimeType || supportedMime || "video/webm";
-      mediaRecorderRef.current = recorder;
-      cancelledRef.current = false;
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) videoChunksRef.current.push(e.data); };
-      recorder.onstop = () => {
-        if (cancelledRef.current) return;
-        const blob = new Blob(videoChunksRef.current, { type: actualMime });
-        setCapturedVideo(blob);
-        stopStream();
-      };
-      recorder.start(250);
-      setIsRecording(true);
-      setRecordingSeconds(0);
-      timerRef.current = setInterval(() => {
-        setRecordingSeconds((s) => {
-          if (s + 1 >= MAX_VIDEO_SECONDS) {
-            mediaRecorderRef.current?.stop();
-            setIsRecording(false);
-            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-          }
-          return s + 1;
-        });
-      }, 1000);
-    } catch {
-      setError("Camera/mic access denied.");
-    }
-  }, [clearCaptures, stopStream]);
-
-  const stopVideoRecording = useCallback(() => {
-    mediaRecorderRef.current?.stop();
-    setIsRecording(false);
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-  }, []);
-
   const handleDeleteMessage = useCallback((messageId: number) => {
     deleteMessageMutation.mutate(
       { roomId, messageId },
@@ -714,11 +505,11 @@ export default function Room() {
     );
   }, [roomId, deleteMessageMutation, queryClient]);
 
-  const uploadAndSend = useCallback(async (mediaBlob: Blob, mediaType: "image" | "audio" | "video") => {
+  const uploadAndSend = useCallback(async (mediaBlob: Blob, mediaType: "image" | "audio") => {
     setIsUploading(true);
     setError(null);
     try {
-      const mime = mediaBlob.type || (mediaType === "audio" ? "audio/webm" : mediaType === "video" ? "video/webm" : "image/jpeg");
+      const mime = mediaBlob.type || (mediaType === "audio" ? "audio/webm" : "image/jpeg");
       const ext = mediaType === "image" ? "jpg" : mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
       const urlData = await requestUploadUrlMutation.mutateAsync({
         data: {
@@ -766,9 +557,7 @@ export default function Room() {
 
   const handleSendText = (e: React.FormEvent) => {
     e.preventDefault();
-    if (capturedPhoto) { uploadAndSend(capturedPhoto, "image"); return; }
     if (capturedAudio) { uploadAndSend(capturedAudio, "audio"); return; }
-    if (capturedVideo) { uploadAndSend(capturedVideo, "video"); return; }
     if (!content.trim()) return;
     sendMessageMutation.mutate(
       { roomId, data: { content } },
@@ -801,7 +590,7 @@ export default function Room() {
   }
 
   const isPeripheral = role?.roleType === "peripheral";
-  const hasPending = !!capturedPhoto || !!capturedAudio || !!capturedVideo;
+  const hasPending = !!capturedAudio;
   const isBusy = sendMessageMutation.isPending || isUploading;
 
   return (
@@ -991,7 +780,7 @@ export default function Room() {
             </button>
           </div>
           <div className="text-[8px] font-mono text-muted-foreground/50 mt-1 tracking-wider">
-            audio: waveshaper + delay chain · video: contrast + hue + blur
+            signal: waveshaper distortion + delay chain
           </div>
         </div>
       )}
@@ -1010,7 +799,7 @@ export default function Room() {
           const isOwn = me?.id != null && msg.userId === me.id;
           const isThisPlaying = activeMediaIds.has(msg.id);
           const isThisMuted = mutedIds.has(msg.id);
-          const hasMedia = msg.mediaType === "audio" || msg.mediaType === "video";
+          const hasMedia = msg.mediaType === "audio";
           const isContinuousTarget = playbackMode === "continuous" && continuousHead === msg.id;
           return (
             <div
@@ -1076,21 +865,6 @@ export default function Room() {
                   onAnalyser={isThisPlaying ? setCurrentAnalyser : undefined}
                 />
               )}
-              {msg.mediaType === "video" && msg.mediaUrl && (
-                <EchoVideo
-                  src={`/api/storage${msg.mediaUrl}`}
-                  autoPlay={isContinuousTarget && !isThisPlaying}
-                  isActive={isThisPlaying}
-                  onEnded={() => handleMediaEnded(msg.id)}
-                  onPlay={() => handleMediaPlay(msg.id)}
-                  onStop={() => handleMediaStop(msg.id)}
-                  playbackRate={speed}
-                  muted={isThisMuted}
-                  distortionAmount={distortion}
-                  delayTime={delayTime}
-                  delayFeedback={delayFeedback}
-                />
-              )}
             </div>
           );
         })}
@@ -1104,82 +878,7 @@ export default function Room() {
         </div>
       )}
 
-      {mediaMode === "camera" && !capturedPhoto && (
-        <div className="shrink-0 mb-4 relative border border-border bg-black">
-          <video ref={videoRef} className="w-full max-h-48 object-cover" muted playsInline />
-          <canvas ref={canvasRef} className="hidden" />
-          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-4">
-            <button
-              onClick={capturePhoto}
-              className="px-6 py-2 border border-foreground text-foreground font-medium text-xs uppercase tracking-widest hover:bg-foreground hover:text-background transition-colors"
-            >
-              Capture
-            </button>
-            <button
-              onClick={clearCaptures}
-              className="px-4 py-2 border border-border text-xs font-mono uppercase text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
-      {mediaMode === "video-recording" && !capturedVideo && (
-        <div className="shrink-0 mb-4 relative border border-border bg-black">
-          <video ref={videoRef} className="w-full max-h-48 object-cover" muted playsInline />
-          <div className="absolute top-2 right-2 flex items-center gap-1.5 bg-black/70 px-2 py-1 rounded">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-xs font-mono text-white">{recordingSeconds}s / {MAX_VIDEO_SECONDS}s</span>
-          </div>
-          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-4">
-            <button
-              onClick={stopVideoRecording}
-              className="px-6 py-2 border border-foreground text-foreground font-medium text-xs uppercase tracking-widest hover:bg-foreground hover:text-background transition-colors"
-            >
-              Stop
-            </button>
-            <button
-              onClick={clearCaptures}
-              className="px-4 py-2 border border-border text-xs font-mono uppercase text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!["camera", "video-recording"].includes(mediaMode) && <canvas ref={canvasRef} className="hidden" />}
-
-      {capturedPhoto && (
-        <div className="shrink-0 mb-4 relative border border-border bg-card flex items-center gap-3 px-3 py-2">
-          <ImageIcon className="w-4 h-4 text-muted-foreground shrink-0" />
-          <img
-            src={URL.createObjectURL(capturedPhoto)}
-            alt="Captured"
-            className="h-16 w-16 object-cover border border-border/50"
-          />
-          <span className="text-xs font-mono text-muted-foreground flex-1 lowercase">image ready</span>
-          <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {capturedVideo && (
-        <div className="shrink-0 mb-4 relative border border-border bg-card flex items-center gap-3 px-3 py-2">
-          <Video className="w-4 h-4 text-muted-foreground shrink-0" />
-          <video
-            src={URL.createObjectURL(capturedVideo)}
-            className="h-16 w-24 object-cover border border-border/50"
-            muted
-          />
-          <span className="text-xs font-mono text-muted-foreground flex-1 lowercase">video ready</span>
-          <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
 
       {mediaMode === "recording" && (
         <div className="shrink-0 mb-4 border border-border bg-card flex items-center gap-3 px-3 py-2">
@@ -1214,32 +913,14 @@ export default function Room() {
         ) : (
           <form onSubmit={handleSendText} className="flex gap-2 items-center">
             {!hasPending && (
-              <>
-                <button
-                  type="button"
-                  onClick={mediaMode === "camera" ? clearCaptures : openCamera}
-                  title="Photo"
-                  className="p-2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Camera className="w-5 h-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={mediaMode === "video-recording" ? stopVideoRecording : startVideoRecording}
-                  title={mediaMode === "video-recording" ? "Stop video" : "Record video"}
-                  className={`p-2 transition-colors ${mediaMode === "video-recording" ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  <Video className="w-5 h-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={isRecording && mediaMode === "recording" ? stopRecording : startRecording}
-                  title={isRecording && mediaMode === "recording" ? "Stop recording" : "Record voice"}
-                  className={`p-2 transition-colors ${isRecording && mediaMode === "recording" ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  {isRecording && mediaMode === "recording" ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={isRecording && mediaMode === "recording" ? stopRecording : startRecording}
+                title={isRecording && mediaMode === "recording" ? "Stop recording" : "Record voice"}
+                className={`p-2 transition-colors ${isRecording && mediaMode === "recording" ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {isRecording && mediaMode === "recording" ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              </button>
             )}
             <input
               type="text"
