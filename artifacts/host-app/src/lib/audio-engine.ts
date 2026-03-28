@@ -21,12 +21,12 @@ export interface EchoNode {
 }
 
 function makeDistortionCurve(amount: number): Float32Array {
-  const samples = 44100;
+  const samples = 8192;
   const curve = new Float32Array(samples);
-  const deg = Math.PI / 180;
+  const k = amount * amount;
   for (let i = 0; i < samples; i++) {
     const x = (i * 2) / samples - 1;
-    curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+    curve[i] = (Math.sign(x) * (1 - Math.pow(Math.abs(1 - Math.abs(x)), 1 + k))) ;
   }
   return curve;
 }
@@ -53,6 +53,9 @@ export function createEchoNode(
     distortion.oversample = "4x";
   }
 
+  const preGain = ac.createGain();
+  preGain.gain.value = amt > 0 ? 1 / (1 + amt * 0.3) : 1;
+
   const delay = ac.createDelay(2.0);
   delay.delayTime.value = opts.delayTime ?? 0;
 
@@ -66,12 +69,21 @@ export function createEchoNode(
   analyser.fftSize = 256;
   analyser.smoothingTimeConstant = 0.6;
 
-  source.connect(distortion);
-  distortion.connect(delay);
-  delay.connect(delayGain);
-  delayGain.connect(delay);
-  distortion.connect(gain);
-  delay.connect(gain);
+  if (amt > 0) {
+    source.connect(preGain);
+    preGain.connect(distortion);
+    distortion.connect(delay);
+    delay.connect(delayGain);
+    delayGain.connect(delay);
+    distortion.connect(gain);
+    delay.connect(gain);
+  } else {
+    source.connect(delay);
+    delay.connect(delayGain);
+    delayGain.connect(delay);
+    source.connect(gain);
+    delay.connect(gain);
+  }
   gain.connect(analyser);
   analyser.connect(ac.destination);
 

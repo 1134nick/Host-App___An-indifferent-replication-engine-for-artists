@@ -202,12 +202,12 @@ function BlobAudioPlayer({
 
   useEffect(() => {
     if (echoNodeRef.current && playing && distortionAmount > 0) {
-      const samples = 44100;
+      const samples = 8192;
       const curve = new Float32Array(samples);
-      const deg = Math.PI / 180;
+      const k = distortionAmount * distortionAmount;
       for (let i = 0; i < samples; i++) {
         const x = (i * 2) / samples - 1;
-        curve[i] = ((3 + distortionAmount) * x * 20 * deg) / (Math.PI + distortionAmount * Math.abs(x));
+        curve[i] = Math.sign(x) * (1 - Math.pow(Math.abs(1 - Math.abs(x)), 1 + k));
       }
       echoNodeRef.current.distortion.curve = curve;
     }
@@ -695,7 +695,7 @@ export default function Room() {
               type="range"
               min="0.25"
               max="2"
-              step="0.05"
+              step="0.01"
               value={speed}
               onChange={(e) => setSpeed(parseFloat(e.target.value))}
               className="flex-1 h-1 cursor-pointer"
@@ -708,14 +708,14 @@ export default function Room() {
             <input
               type="range"
               min="0"
-              max="100"
-              step="1"
+              max="20"
+              step="0.1"
               value={distortion}
               onChange={(e) => setDistortion(parseFloat(e.target.value))}
               className="flex-1 h-1 cursor-pointer"
               style={{ accentColor: "rgba(190,40,40,0.85)" }}
             />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{distortion}</span>
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{distortion.toFixed(1)}</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">DELAY</label>
@@ -723,7 +723,7 @@ export default function Room() {
               type="range"
               min="0"
               max="1"
-              step="0.01"
+              step="0.005"
               value={delayTime}
               onChange={(e) => setDelayTime(parseFloat(e.target.value))}
               className="flex-1 h-1 cursor-pointer"
@@ -737,7 +737,7 @@ export default function Room() {
               type="range"
               min="0"
               max="0.9"
-              step="0.01"
+              step="0.005"
               value={delayFeedback}
               onChange={(e) => setDelayFeedback(parseFloat(e.target.value))}
               className="flex-1 h-1 cursor-pointer"
@@ -753,31 +753,31 @@ export default function Room() {
               CLEAN
             </button>
             <button
-              onClick={() => { setSpeed(0.5); setDistortion(40); setDelayTime(0.3); setDelayFeedback(0.5); }}
+              onClick={() => { setSpeed(0.5); setDistortion(8); setDelayTime(0.3); setDelayFeedback(0.5); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
             >
               HAUNTED
             </button>
             <button
-              onClick={() => { setSpeed(1.5); setDistortion(80); setDelayTime(0.1); setDelayFeedback(0.3); }}
+              onClick={() => { setSpeed(1.5); setDistortion(16); setDelayTime(0.1); setDelayFeedback(0.3); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
             >
               CRUSHED
             </button>
             <button
-              onClick={() => { setSpeed(0.75); setDistortion(10); setDelayTime(0.6); setDelayFeedback(0.7); }}
+              onClick={() => { setSpeed(0.75); setDistortion(2); setDelayTime(0.6); setDelayFeedback(0.7); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
             >
               SUBMERGED
             </button>
             <button
-              onClick={() => { setSpeed(0.35); setDistortion(65); setDelayTime(0.8); setDelayFeedback(0.85); }}
+              onClick={() => { setSpeed(0.35); setDistortion(13); setDelayTime(0.8); setDelayFeedback(0.85); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
             >
               VOID
             </button>
             <button
-              onClick={() => { setSpeed(2); setDistortion(20); setDelayTime(0.05); setDelayFeedback(0.15); }}
+              onClick={() => { setSpeed(2); setDistortion(4); setDelayTime(0.05); setDelayFeedback(0.15); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
             >
               NERVE
