@@ -124,7 +124,8 @@ Members can send photos, voice messages, and short videos in rooms. All identiti
 ## Member Channels
 
 - **General channel**: system-created, permanent, all cohort members auto-join. Pinned at top of dashboard.
-- **Member channels**: any cohort member can create a named channel via `POST /api/rooms` with `{ name: "..." }`. Channel numbers are assigned sequentially. All existing cohort members are auto-added to new channels.
+- **Member channels**: any cohort member can create a named channel via `POST /api/rooms` with `{ name: "..." }`. Channel numbers are assigned sequentially. All existing cohort members are auto-added to new channels. New applicants joining a cohort are automatically added to all existing member channels.
+- **Membership uniqueness**: `room_members` has a unique index on `(room_id, user_id)`. All membership inserts use `onConflictDoNothing` for idempotent, race-safe operation.
 - **Dashboard layout**: General pinned at top, member-created channels listed below with left-border indent. "New Channel" button at bottom.
 - **Room types**: `general`, `member_channel`, plus system types (`team_a`, `team_b`, `leader`, `peripheral`, `admin_broadcast`)
 - **DB columns on rooms**: `display_name` (text, nullable), `channel_number` (integer, nullable), `created_by_user_id` (integer, nullable FK to users)

@@ -88,7 +88,7 @@ router.post("/", requireAuth, async (req, res) => {
           roomId: newRoom.id,
           userId: member.userId,
           maskedLabel: generateMaskedLabel(),
-        });
+        }).onConflictDoNothing();
       }
 
       return { ...newRoom, memberCount: cohortMembers.length };
