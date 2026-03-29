@@ -942,7 +942,7 @@ export default function Room() {
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
-                  fx={(msg as any).mediaMeta?.fx ?? CLEAN_FX}
+                  fx={fxOptions}
                   muted={isThisMuted}
                   onAnalyser={isThisPlaying ? setCurrentAnalyser : undefined}
                 />
