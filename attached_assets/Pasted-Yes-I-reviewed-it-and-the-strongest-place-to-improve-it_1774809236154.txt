@@ -1,0 +1,324 @@
+Yes. I reviewed it, and the strongest place to improve it is the audio path.
+
+What is already working
+
+The core room experience is solid: record → preview → apply FX → upload → replay in-room. The waveform, ambient drone, continuous playback mode, and FX presets all give the app an actual identity instead of feeling like generic chat with voice notes. The room page is clearly the center of gravity of the project.  ￼
+
+The biggest audio problems
+
+1. The audio chain is too bare
+
+Right now your live and offline FX chain is basically:
+
+source -> waveshaper -> delay feedback loop -> gain -> analyser -> destination
+
+There is no input trim, no high-pass cleanup, no tone shaping, no wet/dry mix, no compressor/limiter, and no output trim. That means distortion and feedback can get harsh fast, and repeated echoes can pile up into clipping.  ￼
+
+2. You are baking FX destructively into WAV uploads
+
+When FX are active, uploadAndSend() renders the processed result offline and uploads a WAV. That gives you fidelity, but it also makes files much larger and locks the sound permanently. You lose the option to re-interpret older messages later with new presets or room-wide behaviors.  ￼
+
+3. The controls are expressive, but not actually surgical
+
+You currently expose only speed, distortion, delayTime, and delayFeedback, all as global room state. That is enough for vibe, but not enough for quality. The missing controls are the ones that make audio feel intentional: input gain, output gain, mix, tone, and some form of cleanup/limiting.  ￼
+
+4. There is a playback bookkeeping issue
+
+BlobAudioPlayer updates the source playback rate live, but progress tracking is computed from the playback rate captured when playback started. If the user changes speed mid-play, the sound changes, but the progress math can drift.  ￼
+
+The best upgrade path
+
+Do this in order:
+	1.	Add a real FX bus.
+	2.	Add safer controls.
+	3.	Keep raw audio and store FX metadata separately.
+	4.	Then polish ambient/drone interaction.
+
+The audio architecture I would switch to
+
+Use this graph:
+
+source -> inputGain -> highpass -> compressor -> split
+
+Dry path:
+split -> dryGain -> limiter -> outputGain -> analyser -> destination
+
+Wet path:
+split -> toneFilter -> waveshaper -> delay -> wetGain -> limiter -> outputGain -> analyser -> destination
+
+Feedback loop:
+delay -> feedbackFilter -> feedbackGain -> delay
+
+That gives you:
+	•	cleaner voice capture
+	•	less mud
+	•	safer distortion
+	•	echoes that decay musically instead of shredding the signal
+	•	actual wet/dry control
+
+Concrete patch: audio-engine.ts
+
+This is the first thing I’d replace.
+
+let ctx: AudioContext | null = null;
+
+export function getAudioContext(): AudioContext {
+  if (!ctx || ctx.state === "closed") {
+    ctx = new AudioContext({ latencyHint: "interactive" });
+  }
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+  return ctx;
+}
+
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+function makeDistortionCurve(amount: number): Float32Array {
+  const samples = 44100;
+  const curve = new Float32Array(samples);
+  const k = Math.max(0, amount);
+  const deg = Math.PI / 180;
+
+  for (let i = 0; i < samples; i++) {
+    const x = (i * 2) / samples - 1;
+    curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+  }
+
+  return curve;
+}
+
+function setWetDry(dry: GainNode, wet: GainNode, mix: number) {
+  const m = clamp(mix, 0, 1);
+  dry.gain.value = 1 - m;
+  wet.gain.value = m;
+}
+
+export interface FxOptions {
+  playbackRate?: number;
+  inputGain?: number;
+  outputGain?: number;
+  highpassHz?: number;
+  toneHz?: number;
+  distortionAmount?: number;
+  delayTime?: number;
+  delayFeedback?: number;
+  mix?: number;
+}
+
+export interface EchoNode {
+  source: AudioBufferSourceNode;
+  analyser: AnalyserNode;
+  inputGain: GainNode;
+  outputGain: GainNode;
+  dryGain: GainNode;
+  wetGain: GainNode;
+  highpass: BiquadFilterNode;
+  tone: BiquadFilterNode;
+  distortion: WaveShaperNode;
+  delay: DelayNode;
+  feedbackGain: GainNode;
+  feedbackFilter: BiquadFilterNode;
+  compressor: DynamicsCompressorNode;
+  limiter: DynamicsCompressorNode;
+  buffer: AudioBuffer;
+}
+
+export function createEchoNode(
+  buffer: AudioBuffer,
+  opts: FxOptions = {},
+): EchoNode {
+  const ac = getAudioContext();
+
+  const source = ac.createBufferSource();
+  source.buffer = buffer;
+  source.playbackRate.value = opts.playbackRate ?? 1;
+
+  const inputGain = ac.createGain();
+  inputGain.gain.value = opts.inputGain ?? 1;
+
+  const highpass = ac.createBiquadFilter();
+  highpass.type = "highpass";
+  highpass.frequency.value = opts.highpassHz ?? 80;
+  highpass.Q.value = 0.707;
+
+  const compressor = ac.createDynamicsCompressor();
+  compressor.threshold.value = -20;
+  compressor.knee.value = 18;
+  compressor.ratio.value = 3;
+  compressor.attack.value = 0.003;
+  compressor.release.value = 0.18;
+
+  const dryGain = ac.createGain();
+  const wetGain = ac.createGain();
+
+  const tone = ac.createBiquadFilter();
+  tone.type = "lowpass";
+  tone.frequency.value = opts.toneHz ?? 2800;
+  tone.Q.value = 0.8;
+
+  const distortion = ac.createWaveShaper();
+  const drive = opts.distortionAmount ?? 0;
+  distortion.curve = drive > 0 ? makeDistortionCurve(drive) : null;
+  distortion.oversample = "4x";
+
+  const delay = ac.createDelay(2.0);
+  delay.delayTime.value = clamp(opts.delayTime ?? 0, 0, 1.2);
+
+  const feedbackFilter = ac.createBiquadFilter();
+  feedbackFilter.type = "lowpass";
+  feedbackFilter.frequency.value = 2400;
+  feedbackFilter.Q.value = 0.7;
+
+  const feedbackGain = ac.createGain();
+  feedbackGain.gain.value = clamp(opts.delayFeedback ?? 0, 0, 0.75);
+
+  const limiter = ac.createDynamicsCompressor();
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.001;
+  limiter.release.value = 0.08;
+
+  const outputGain = ac.createGain();
+  outputGain.gain.value = opts.outputGain ?? 0.9;
+
+  const analyser = ac.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.75;
+
+  setWetDry(dryGain, wetGain, opts.mix ?? 0.28);
+
+  source.connect(inputGain);
+  inputGain.connect(highpass);
+  highpass.connect(compressor);
+
+  compressor.connect(dryGain);
+
+  compressor.connect(tone);
+  tone.connect(distortion);
+  distortion.connect(delay);
+  delay.connect(wetGain);
+
+  delay.connect(feedbackFilter);
+  feedbackFilter.connect(feedbackGain);
+  feedbackGain.connect(delay);
+
+  dryGain.connect(limiter);
+  wetGain.connect(limiter);
+  limiter.connect(outputGain);
+  outputGain.connect(analyser);
+  analyser.connect(ac.destination);
+
+  return {
+    source,
+    analyser,
+    inputGain,
+    outputGain,
+    dryGain,
+    wetGain,
+    highpass,
+    tone,
+    distortion,
+    delay,
+    feedbackGain,
+    feedbackFilter,
+    compressor,
+    limiter,
+    buffer,
+  };
+}
+
+That change alone will make the app sound less brittle and more deliberate.
+
+New FX controls to add in room.tsx
+
+Add these states:
+
+const [inputGain, setInputGain] = useState(1);
+const [outputGain, setOutputGain] = useState(0.9);
+const [mix, setMix] = useState(0.28);
+const [toneHz, setToneHz] = useState(2800);
+const [highpassHz, setHighpassHz] = useState(80);
+
+Pass them into BlobAudioPlayer and renderWithFx.
+
+Then add these sliders:
+	•	INPUT: 0.5 → 2.0
+	•	OUTPUT: 0.2 → 1.2
+	•	MIX: 0 → 1
+	•	TONE: 500 → 8000 Hz
+	•	HPASS: 40 → 180 Hz
+
+That turns the controls from “cool damage” into “controllable sound design.” Your current four sliders are good presets, but not good engineering.  ￼
+
+Recording quality: fix capture constraints
+
+Right now you request the mic with { audio: true }. That leaves quality decisions to the browser/device. I’d at least make the request explicit.  ￼
+
+Use:
+
+const stream = await navigator.mediaDevices.getUserMedia({
+  audio: {
+    channelCount: 1,
+    sampleRate: 48000,
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: false,
+  },
+  video: false,
+});
+
+That is a decent default for intelligible voice that still lets your own FX do the heavier aesthetic shaping.
+
+Medium-term change: do not upload rendered WAV unless you have to
+
+Better model:
+	•	upload raw recording
+	•	store FX settings in message metadata
+	•	render live on playback
+	•	optionally let users “commit” a render later
+
+Why this is better:
+	•	much smaller files
+	•	old messages stay editable
+	•	room-wide reinterpretation becomes possible
+	•	more interesting conceptually for your app
+
+Right now the destructive render happens in uploadAndSend(), and the DB/API model only supports mediaType and mediaUrl, not FX metadata.  ￼
+
+If you do this, add a mediaMeta JSON field to messages, and extend the API schema accordingly.  ￼
+
+Two non-audio issues you should fix soon
+
+1. Your “private” media route is effectively open
+
+GET /storage/objects/*path serves objects directly and does not require auth or check ACL, even though you already built ACL-related utilities. For a members-only app, that is a real privacy problem.  ￼
+
+2. Your application flow and schema are out of sync
+
+The frontend application form submits only age and artistStatement, but the DB schema and admin dashboard still expect fields like nationality, profession, and educationalBackground. That mismatch will produce incomplete records and a thin onboarding ritual.  ￼
+
+Best preset redesign
+
+Your current presets are good names. Keep them. Just remap them around a fuller bus.
+
+For example:
+	•	CLEAN: mix 0.08, drive 0, tone 5200, delay 0
+	•	HAUNTED: mix 0.30, drive 18, tone 2400, delay 0.28, feedback 0.42
+	•	CRUSHED: mix 0.22, drive 55, tone 1700, delay 0.08, feedback 0.22
+	•	SUBMERGED: mix 0.40, drive 8, tone 1100, delay 0.52, feedback 0.48
+	•	VOID: mix 0.55, drive 42, tone 900, delay 0.82, feedback 0.68
+	•	NERVE: mix 0.16, drive 14, tone 4200, delay 0.05, feedback 0.14
+
+Those will read more distinctly than the current speed-heavy presets.  ￼
+
+Straight assessment
+
+The app’s sound design is already interesting.
+
+What it lacks is not imagination. It lacks gain staging, safety, and control separation.
+
+That is good news, because those are fixable without changing the identity of the project. The visual language is already there. The room logic is already there. The audio just needs to stop being a single rough chain and become a real instrument.  ￼
+
+If you want, I’ll turn this into a direct patch for src/lib/audio-engine.ts and the relevant room.tsx sections so you can paste it into Replit.

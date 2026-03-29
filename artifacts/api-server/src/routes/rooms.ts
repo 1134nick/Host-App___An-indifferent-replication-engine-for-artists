@@ -135,15 +135,13 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
   const roomId = parseInt(req.params.roomId);
   if (isNaN(roomId)) { res.status(400).json({ error: "validation_error", message: "Invalid room ID" }); return; }
 
-  const { content, mediaType, mediaUrl } = req.body;
+  const { content, mediaType, mediaUrl, mediaMeta } = req.body;
 
-  // Must have either text content or a media attachment
   if (!content?.trim() && !mediaUrl) {
     res.status(400).json({ error: "validation_error", message: "Message must have content or media" });
     return;
   }
 
-  // Validate mediaType if provided
   if (mediaType && !["image", "audio", "video"].includes(mediaType)) {
     res.status(400).json({ error: "validation_error", message: "mediaType must be image, audio, or video" });
     return;
@@ -175,6 +173,7 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
       maskedSenderLabel: membership.maskedLabel || "UNKNOWN-ENTITY",
       mediaType: mediaType || null,
       mediaUrl: mediaUrl || null,
+      mediaMeta: mediaMeta || null,
     }).returning();
 
     res.status(201).json(message);

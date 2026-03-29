@@ -174,6 +174,8 @@ export const MessageMediaType = {
   video: "video",
 } as const;
 
+export type MessageMediaMeta = { [key: string]: unknown } | null;
+
 export interface Message {
   id: number;
   roomId: number;
@@ -183,6 +185,7 @@ export interface Message {
   maskedSenderLabel?: string | null;
   mediaType?: MessageMediaType;
   mediaUrl?: string | null;
+  mediaMeta?: MessageMediaMeta;
   createdAt: string;
 }
 
@@ -196,10 +199,13 @@ export const SendMessageRequestMediaType = {
   video: "video",
 } as const;
 
+export type SendMessageRequestMediaMeta = { [key: string]: unknown } | null;
+
 export interface SendMessageRequest {
   content?: string | null;
   mediaType?: SendMessageRequestMediaType;
   mediaUrl?: string | null;
+  mediaMeta?: SendMessageRequestMediaMeta;
 }
 
 export interface RequestUploadUrlRequest {

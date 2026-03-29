@@ -2,7 +2,7 @@ let ctx: AudioContext | null = null;
 
 export function getAudioContext(): AudioContext {
   if (!ctx || ctx.state === "closed") {
-    ctx = new AudioContext();
+    ctx = new AudioContext({ latencyHint: "interactive" });
   }
   if (ctx.state === "suspended") {
     ctx.resume().catch(() => {});
@@ -10,72 +10,172 @@ export function getAudioContext(): AudioContext {
   return ctx;
 }
 
-export interface EchoNode {
-  source: AudioBufferSourceNode;
-  gain: GainNode;
-  analyser: AnalyserNode;
-  distortion: WaveShaperNode;
-  delay: DelayNode;
-  delayGain: GainNode;
-  buffer: AudioBuffer;
-}
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
 
 function makeDistortionCurve(amount: number): Float32Array {
   const samples = 44100;
   const curve = new Float32Array(samples);
+  const k = Math.max(0, amount);
   const deg = Math.PI / 180;
+
   for (let i = 0; i < samples; i++) {
     const x = (i * 2) / samples - 1;
-    curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+    curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
   }
+
   return curve;
+}
+
+export interface FxOptions {
+  playbackRate?: number;
+  inputGain?: number;
+  outputGain?: number;
+  highpassHz?: number;
+  toneHz?: number;
+  distortionAmount?: number;
+  delayTime?: number;
+  delayFeedback?: number;
+  mix?: number;
+}
+
+export interface EchoNode {
+  source: AudioBufferSourceNode;
+  analyser: AnalyserNode;
+  inputGain: GainNode;
+  outputGain: GainNode;
+  dryGain: GainNode;
+  wetGain: GainNode;
+  highpass: BiquadFilterNode;
+  tone: BiquadFilterNode;
+  distortion: WaveShaperNode;
+  delay: DelayNode;
+  feedbackGain: GainNode;
+  feedbackFilter: BiquadFilterNode;
+  compressor: DynamicsCompressorNode;
+  limiter: DynamicsCompressorNode;
+  buffer: AudioBuffer;
+}
+
+function setWetDry(dry: GainNode, wet: GainNode, mix: number) {
+  const m = clamp(mix, 0, 1);
+  dry.gain.value = 1 - m;
+  wet.gain.value = m;
+}
+
+function buildFxGraph(
+  ac: BaseAudioContext,
+  source: AudioBufferSourceNode,
+  opts: FxOptions,
+  destination: AudioNode,
+): Omit<EchoNode, "buffer"> {
+  source.playbackRate.value = opts.playbackRate ?? 1;
+
+  const inputGain = ac.createGain();
+  inputGain.gain.value = opts.inputGain ?? 1;
+
+  const highpass = ac.createBiquadFilter();
+  highpass.type = "highpass";
+  highpass.frequency.value = opts.highpassHz ?? 80;
+  highpass.Q.value = 0.707;
+
+  const compressor = ac.createDynamicsCompressor();
+  compressor.threshold.value = -20;
+  compressor.knee.value = 18;
+  compressor.ratio.value = 3;
+  compressor.attack.value = 0.003;
+  compressor.release.value = 0.18;
+
+  const dryGain = ac.createGain();
+  const wetGain = ac.createGain();
+
+  const tone = ac.createBiquadFilter();
+  tone.type = "lowpass";
+  tone.frequency.value = opts.toneHz ?? 2800;
+  tone.Q.value = 0.8;
+
+  const distortion = ac.createWaveShaper();
+  const drive = opts.distortionAmount ?? 0;
+  distortion.curve = drive > 0 ? makeDistortionCurve(drive) : null;
+  distortion.oversample = "4x";
+
+  const delay = ac.createDelay(2.0);
+  delay.delayTime.value = clamp(opts.delayTime ?? 0, 0, 1.2);
+
+  const feedbackFilter = ac.createBiquadFilter();
+  feedbackFilter.type = "lowpass";
+  feedbackFilter.frequency.value = 2400;
+  feedbackFilter.Q.value = 0.7;
+
+  const feedbackGain = ac.createGain();
+  feedbackGain.gain.value = clamp(opts.delayFeedback ?? 0, 0, 0.75);
+
+  const limiter = ac.createDynamicsCompressor();
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.001;
+  limiter.release.value = 0.08;
+
+  const outputGain = ac.createGain();
+  outputGain.gain.value = opts.outputGain ?? 0.9;
+
+  const analyser = ac.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.75;
+
+  setWetDry(dryGain, wetGain, opts.mix ?? 0.28);
+
+  source.connect(inputGain);
+  inputGain.connect(highpass);
+  highpass.connect(compressor);
+
+  compressor.connect(dryGain);
+
+  compressor.connect(tone);
+  tone.connect(distortion);
+  distortion.connect(delay);
+  delay.connect(wetGain);
+
+  delay.connect(feedbackFilter);
+  feedbackFilter.connect(feedbackGain);
+  feedbackGain.connect(delay);
+
+  dryGain.connect(limiter);
+  wetGain.connect(limiter);
+  limiter.connect(outputGain);
+  outputGain.connect(analyser);
+  analyser.connect(destination);
+
+  return {
+    source,
+    analyser,
+    inputGain,
+    outputGain,
+    dryGain,
+    wetGain,
+    highpass,
+    tone,
+    distortion,
+    delay,
+    feedbackGain,
+    feedbackFilter,
+    compressor,
+    limiter,
+  };
 }
 
 export function createEchoNode(
   buffer: AudioBuffer,
-  opts: {
-    playbackRate?: number;
-    distortionAmount?: number;
-    delayTime?: number;
-    delayFeedback?: number;
-  } = {}
+  opts: FxOptions = {},
 ): EchoNode {
   const ac = getAudioContext();
 
   const source = ac.createBufferSource();
   source.buffer = buffer;
-  source.playbackRate.value = opts.playbackRate ?? 1;
 
-  const distortion = ac.createWaveShaper();
-  const amt = opts.distortionAmount ?? 0;
-  if (amt > 0) {
-    distortion.curve = makeDistortionCurve(amt);
-    distortion.oversample = "4x";
-  }
+  const nodes = buildFxGraph(ac, source, opts, ac.destination);
 
-  const delay = ac.createDelay(2.0);
-  delay.delayTime.value = opts.delayTime ?? 0;
-
-  const delayGain = ac.createGain();
-  delayGain.gain.value = opts.delayFeedback ?? 0;
-
-  const gain = ac.createGain();
-  gain.gain.value = 1;
-
-  const analyser = ac.createAnalyser();
-  analyser.fftSize = 256;
-  analyser.smoothingTimeConstant = 0.6;
-
-  source.connect(distortion);
-  distortion.connect(delay);
-  delay.connect(delayGain);
-  delayGain.connect(delay);
-  distortion.connect(gain);
-  delay.connect(gain);
-  gain.connect(analyser);
-  analyser.connect(ac.destination);
-
-  return { source, gain, analyser, distortion, delay, delayGain, buffer };
+  return { ...nodes, buffer };
 }
 
 function encodeWav(buffer: AudioBuffer): Blob {
@@ -127,55 +227,31 @@ function encodeWav(buffer: AudioBuffer): Blob {
 
 export async function renderWithFx(
   sourceBlob: Blob,
-  opts: {
-    playbackRate: number;
-    distortionAmount: number;
-    delayTime: number;
-    delayFeedback: number;
-  }
+  opts: FxOptions,
 ): Promise<Blob> {
   const ac = getAudioContext();
   const arrayBuf = await sourceBlob.arrayBuffer();
   const inputBuffer = await ac.decodeAudioData(arrayBuf);
 
-  const adjustedDuration = inputBuffer.duration / opts.playbackRate;
-  const tailTime = opts.delayTime > 0 && opts.delayFeedback > 0
-    ? Math.min(opts.delayTime * Math.ceil(Math.log(0.001) / Math.log(opts.delayFeedback)), 10)
+  const rate = opts.playbackRate ?? 1;
+  const adjustedDuration = inputBuffer.duration / rate;
+  const dt = opts.delayTime ?? 0;
+  const fb = opts.delayFeedback ?? 0;
+  const tailTime = dt > 0 && fb > 0
+    ? Math.min(dt * Math.ceil(Math.log(0.001) / Math.log(fb)), 10)
     : 0;
   const totalDuration = adjustedDuration + tailTime + 0.5;
 
   const offlineCtx = new OfflineAudioContext(
     inputBuffer.numberOfChannels,
     Math.ceil(totalDuration * inputBuffer.sampleRate),
-    inputBuffer.sampleRate
+    inputBuffer.sampleRate,
   );
 
   const source = offlineCtx.createBufferSource();
   source.buffer = inputBuffer;
-  source.playbackRate.value = opts.playbackRate;
 
-  const distortion = offlineCtx.createWaveShaper();
-  if (opts.distortionAmount > 0) {
-    distortion.curve = makeDistortionCurve(opts.distortionAmount);
-    distortion.oversample = "4x";
-  }
-
-  const delay = offlineCtx.createDelay(2.0);
-  delay.delayTime.value = opts.delayTime;
-
-  const delayGain = offlineCtx.createGain();
-  delayGain.gain.value = opts.delayFeedback;
-
-  const gain = offlineCtx.createGain();
-  gain.gain.value = 1;
-
-  source.connect(distortion);
-  distortion.connect(delay);
-  delay.connect(delayGain);
-  delayGain.connect(delay);
-  distortion.connect(gain);
-  delay.connect(gain);
-  gain.connect(offlineCtx.destination);
+  buildFxGraph(offlineCtx, source, opts, offlineCtx.destination);
 
   source.start(0);
   const renderedBuffer = await offlineCtx.startRendering();
@@ -283,11 +359,11 @@ export function createDroneOscillator(messageCount: number): {
       const newIntensity = Math.min(count / 50, 1);
       masterGain.gain.linearRampToValueAtTime(
         0.012 * newIntensity,
-        ac.currentTime + 0.5
+        ac.currentTime + 0.5,
       );
       filter.frequency.linearRampToValueAtTime(
         200 + newIntensity * 400,
-        ac.currentTime + 1
+        ac.currentTime + 1,
       );
     },
   };

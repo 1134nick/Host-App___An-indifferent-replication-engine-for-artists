@@ -1,0 +1,168 @@
+let ctx: AudioContext | null = null;
+
+export function getAudioContext(): AudioContext {
+  if (!ctx || ctx.state === "closed") {
+    ctx = new AudioContext({ latencyHint: "interactive" });
+  }
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+  return ctx;
+}
+
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+function makeDistortionCurve(amount: number): Float32Array {
+  const samples = 44100;
+  const curve = new Float32Array(samples);
+  const k = Math.max(0, amount);
+  const deg = Math.PI / 180;
+
+  for (let i = 0; i < samples; i++) {
+    const x = (i * 2) / samples - 1;
+    curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+  }
+
+  return curve;
+}
+
+function setWetDry(dry: GainNode, wet: GainNode, mix: number) {
+  const m = clamp(mix, 0, 1);
+  dry.gain.value = 1 - m;
+  wet.gain.value = m;
+}
+
+export interface FxOptions {
+  playbackRate?: number;
+  inputGain?: number;
+  outputGain?: number;
+  highpassHz?: number;
+  toneHz?: number;
+  distortionAmount?: number;
+  delayTime?: number;
+  delayFeedback?: number;
+  mix?: number;
+}
+
+export interface EchoNode {
+  source: AudioBufferSourceNode;
+  analyser: AnalyserNode;
+  inputGain: GainNode;
+  outputGain: GainNode;
+  dryGain: GainNode;
+  wetGain: GainNode;
+  highpass: BiquadFilterNode;
+  tone: BiquadFilterNode;
+  distortion: WaveShaperNode;
+  delay: DelayNode;
+  feedbackGain: GainNode;
+  feedbackFilter: BiquadFilterNode;
+  compressor: DynamicsCompressorNode;
+  limiter: DynamicsCompressorNode;
+  buffer: AudioBuffer;
+}
+
+export function createEchoNode(
+  buffer: AudioBuffer,
+  opts: FxOptions = {},
+): EchoNode {
+  const ac = getAudioContext();
+
+  const source = ac.createBufferSource();
+  source.buffer = buffer;
+  source.playbackRate.value = opts.playbackRate ?? 1;
+
+  const inputGain = ac.createGain();
+  inputGain.gain.value = opts.inputGain ?? 1;
+
+  const highpass = ac.createBiquadFilter();
+  highpass.type = "highpass";
+  highpass.frequency.value = opts.highpassHz ?? 80;
+  highpass.Q.value = 0.707;
+
+  const compressor = ac.createDynamicsCompressor();
+  compressor.threshold.value = -20;
+  compressor.knee.value = 18;
+  compressor.ratio.value = 3;
+  compressor.attack.value = 0.003;
+  compressor.release.value = 0.18;
+
+  const dryGain = ac.createGain();
+  const wetGain = ac.createGain();
+
+  const tone = ac.createBiquadFilter();
+  tone.type = "lowpass";
+  tone.frequency.value = opts.toneHz ?? 2800;
+  tone.Q.value = 0.8;
+
+  const distortion = ac.createWaveShaper();
+  const drive = opts.distortionAmount ?? 0;
+  distortion.curve = drive > 0 ? makeDistortionCurve(drive) : null;
+  distortion.oversample = "4x";
+
+  const delay = ac.createDelay(2.0);
+  delay.delayTime.value = clamp(opts.delayTime ?? 0, 0, 1.2);
+
+  const feedbackFilter = ac.createBiquadFilter();
+  feedbackFilter.type = "lowpass";
+  feedbackFilter.frequency.value = 2400;
+  feedbackFilter.Q.value = 0.7;
+
+  const feedbackGain = ac.createGain();
+  feedbackGain.gain.value = clamp(opts.delayFeedback ?? 0, 0, 0.75);
+
+  const limiter = ac.createDynamicsCompressor();
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.001;
+  limiter.release.value = 0.08;
+
+  const outputGain = ac.createGain();
+  outputGain.gain.value = opts.outputGain ?? 0.9;
+
+  const analyser = ac.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.75;
+
+  setWetDry(dryGain, wetGain, opts.mix ?? 0.28);
+
+  source.connect(inputGain);
+  inputGain.connect(highpass);
+  highpass.connect(compressor);
+
+  compressor.connect(dryGain);
+
+  compressor.connect(tone);
+  tone.connect(distortion);
+  distortion.connect(delay);
+  delay.connect(wetGain);
+
+  delay.connect(feedbackFilter);
+  feedbackFilter.connect(feedbackGain);
+  feedbackGain.connect(delay);
+
+  dryGain.connect(limiter);
+  wetGain.connect(limiter);
+  limiter.connect(outputGain);
+  outputGain.connect(analyser);
+  analyser.connect(ac.destination);
+
+  return {
+    source,
+    analyser,
+    inputGain,
+    outputGain,
+    dryGain,
+    wetGain,
+    highpass,
+    tone,
+    distortion,
+    delay,
+    feedbackGain,
+    feedbackFilter,
+    compressor,
+    limiter,
+    buffer,
+  };
+}

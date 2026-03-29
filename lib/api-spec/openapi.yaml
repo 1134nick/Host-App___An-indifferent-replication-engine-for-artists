@@ -811,6 +811,10 @@ components:
         mediaUrl:
           type: string
           nullable: true
+        mediaMeta:
+          type: object
+          nullable: true
+          additionalProperties: true
         createdAt:
           type: string
           format: date-time
@@ -833,6 +837,10 @@ components:
         mediaUrl:
           type: string
           nullable: true
+        mediaMeta:
+          type: object
+          nullable: true
+          additionalProperties: true
 
     RequestUploadUrlRequest:
       type: object

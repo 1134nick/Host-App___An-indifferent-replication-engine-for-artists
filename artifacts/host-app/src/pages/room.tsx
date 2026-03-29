@@ -11,11 +11,16 @@ import {
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Mic, MicOff, X, Send, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Radio, Zap } from "lucide-react";
-import { fetchAndDecode, createEchoNode, getAudioContext, renderWithFx, type EchoNode } from "../lib/audio-engine";
+import { fetchAndDecode, createEchoNode, getAudioContext, type EchoNode, type FxOptions } from "../lib/audio-engine";
 import Waveform from "../components/waveform";
 import AmbientDrone from "../components/ambient-drone";
 
 type PlaybackMode = "single" | "continuous";
+
+const CLEAN_FX: FxOptions = {
+  playbackRate: 1, distortionAmount: 0, delayTime: 0, delayFeedback: 0,
+  inputGain: 1, outputGain: 0.9, mix: 0.08, toneHz: 5200, highpassHz: 80,
+};
 
 function BlobAudioPlayer({
   src,
@@ -24,10 +29,7 @@ function BlobAudioPlayer({
   onStop,
   autoPlay,
   isActive,
-  playbackRate,
-  distortionAmount,
-  delayTime,
-  delayFeedback,
+  fx,
   muted,
   onAnalyser,
 }: {
@@ -37,10 +39,7 @@ function BlobAudioPlayer({
   onStop?: () => void;
   autoPlay?: boolean;
   isActive: boolean;
-  playbackRate: number;
-  distortionAmount: number;
-  delayTime: number;
-  delayFeedback: number;
+  fx: FxOptions;
   muted: boolean;
   onAnalyser?: (a: AnalyserNode | null) => void;
 }) {
@@ -53,6 +52,7 @@ function BlobAudioPlayer({
   const [duration, setDuration] = useState(0);
   const startTimeRef = useRef(0);
   const offsetRef = useRef(0);
+  const rateAtStartRef = useRef(1);
   const rafRef = useRef<number>(0);
   const loadedRef = useRef(false);
 
@@ -71,11 +71,19 @@ function BlobAudioPlayer({
       try {
         echoNodeRef.current.source.stop();
         echoNodeRef.current.source.disconnect();
-        echoNodeRef.current.gain.disconnect();
+        echoNodeRef.current.outputGain.disconnect();
         echoNodeRef.current.analyser.disconnect();
         echoNodeRef.current.distortion.disconnect();
         echoNodeRef.current.delay.disconnect();
-        echoNodeRef.current.delayGain.disconnect();
+        echoNodeRef.current.feedbackGain.disconnect();
+        echoNodeRef.current.feedbackFilter.disconnect();
+        echoNodeRef.current.inputGain.disconnect();
+        echoNodeRef.current.highpass.disconnect();
+        echoNodeRef.current.compressor.disconnect();
+        echoNodeRef.current.tone.disconnect();
+        echoNodeRef.current.dryGain.disconnect();
+        echoNodeRef.current.wetGain.disconnect();
+        echoNodeRef.current.limiter.disconnect();
       } catch {}
       echoNodeRef.current = null;
     }
@@ -108,19 +116,16 @@ function BlobAudioPlayer({
       const buf = bufferRef.current || (await loadBuffer());
       if (!buf) return;
 
-      const node = createEchoNode(buf, {
-        playbackRate,
-        distortionAmount,
-        delayTime,
-        delayFeedback,
-      });
+      const rate = fx.playbackRate ?? 1;
+      const node = createEchoNode(buf, fx);
       echoNodeRef.current = node;
-      node.gain.gain.value = muted ? 0 : 1;
+      node.outputGain.gain.value = muted ? 0 : (fx.outputGain ?? 0.9);
       onAnalyserRef.current?.(node.analyser);
 
       const ac = getAudioContext();
       startTimeRef.current = ac.currentTime;
       offsetRef.current = fromOffset;
+      rateAtStartRef.current = rate;
 
       node.source.onended = () => {
         setPlaying(false);
@@ -138,24 +143,26 @@ function BlobAudioPlayer({
       const tick = () => {
         if (!echoNodeRef.current) return;
         const ac2 = getAudioContext();
-        const elapsed = (ac2.currentTime - startTimeRef.current) * playbackRate + fromOffset;
+        const currentRate = echoNodeRef.current.source.playbackRate.value;
+        const elapsed = (ac2.currentTime - startTimeRef.current) * currentRate + fromOffset;
         setProgress(Math.min(elapsed, buf.duration));
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
     } catch {}
-  }, [cleanup, loadBuffer, playbackRate, distortionAmount, delayTime, delayFeedback, muted]);
+  }, [cleanup, loadBuffer, fx, muted]);
 
   const stopPlayback = useCallback(() => {
     if (echoNodeRef.current) {
       const ac = getAudioContext();
-      const elapsed = (ac.currentTime - startTimeRef.current) * playbackRate + offsetRef.current;
+      const rate = echoNodeRef.current.source.playbackRate.value;
+      const elapsed = (ac.currentTime - startTimeRef.current) * rate + offsetRef.current;
       offsetRef.current = elapsed;
     }
     cleanup();
     setPlaying(false);
     onStopRef.current?.();
-  }, [cleanup, playbackRate]);
+  }, [cleanup]);
 
   const togglePlay = useCallback(async () => {
     try {
@@ -190,35 +197,66 @@ function BlobAudioPlayer({
 
   useEffect(() => {
     if (echoNodeRef.current) {
-      echoNodeRef.current.gain.gain.value = muted ? 0 : 1;
+      echoNodeRef.current.outputGain.gain.value = muted ? 0 : (fx.outputGain ?? 0.9);
     }
-  }, [muted]);
+  }, [muted, fx.outputGain]);
 
   useEffect(() => {
     if (echoNodeRef.current && playing) {
-      echoNodeRef.current.source.playbackRate.value = playbackRate;
+      echoNodeRef.current.source.playbackRate.value = fx.playbackRate ?? 1;
     }
-  }, [playbackRate, playing]);
+  }, [fx.playbackRate, playing]);
 
   useEffect(() => {
-    if (echoNodeRef.current && playing && distortionAmount > 0) {
-      const samples = 44100;
-      const curve = new Float32Array(samples);
-      const deg = Math.PI / 180;
-      for (let i = 0; i < samples; i++) {
-        const x = (i * 2) / samples - 1;
-        curve[i] = ((3 + distortionAmount) * x * 20 * deg) / (Math.PI + distortionAmount * Math.abs(x));
+    if (echoNodeRef.current && playing) {
+      const drive = fx.distortionAmount ?? 0;
+      if (drive > 0) {
+        const samples = 44100;
+        const curve = new Float32Array(samples);
+        const deg = Math.PI / 180;
+        for (let i = 0; i < samples; i++) {
+          const x = (i * 2) / samples - 1;
+          curve[i] = ((3 + drive) * x * 20 * deg) / (Math.PI + drive * Math.abs(x));
+        }
+        echoNodeRef.current.distortion.curve = curve;
+      } else {
+        echoNodeRef.current.distortion.curve = null;
       }
-      echoNodeRef.current.distortion.curve = curve;
     }
-  }, [distortionAmount, playing]);
+  }, [fx.distortionAmount, playing]);
 
   useEffect(() => {
     if (echoNodeRef.current && playing) {
-      echoNodeRef.current.delay.delayTime.value = delayTime;
-      echoNodeRef.current.delayGain.gain.value = delayFeedback;
+      echoNodeRef.current.delay.delayTime.value = Math.min(fx.delayTime ?? 0, 1.2);
+      echoNodeRef.current.feedbackGain.gain.value = Math.min(fx.delayFeedback ?? 0, 0.75);
     }
-  }, [delayTime, delayFeedback, playing]);
+  }, [fx.delayTime, fx.delayFeedback, playing]);
+
+  useEffect(() => {
+    if (echoNodeRef.current && playing) {
+      echoNodeRef.current.inputGain.gain.value = fx.inputGain ?? 1;
+    }
+  }, [fx.inputGain, playing]);
+
+  useEffect(() => {
+    if (echoNodeRef.current && playing) {
+      echoNodeRef.current.tone.frequency.value = fx.toneHz ?? 2800;
+    }
+  }, [fx.toneHz, playing]);
+
+  useEffect(() => {
+    if (echoNodeRef.current && playing) {
+      echoNodeRef.current.highpass.frequency.value = fx.highpassHz ?? 80;
+    }
+  }, [fx.highpassHz, playing]);
+
+  useEffect(() => {
+    if (echoNodeRef.current && playing && fx.mix !== undefined) {
+      const m = Math.max(0, Math.min(1, fx.mix));
+      echoNodeRef.current.dryGain.gain.value = 1 - m;
+      echoNodeRef.current.wetGain.gain.value = m;
+    }
+  }, [fx.mix, playing]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -326,7 +364,24 @@ export default function Room() {
   const [distortion, setDistortion] = useState(0);
   const [delayTime, setDelayTime] = useState(0);
   const [delayFeedback, setDelayFeedback] = useState(0);
+  const [inputGain, setInputGain] = useState(1);
+  const [outputGain, setOutputGain] = useState(0.9);
+  const [mix, setMix] = useState(0.28);
+  const [toneHz, setToneHz] = useState(2800);
+  const [highpassHz, setHighpassHz] = useState(80);
   const [showFx, setShowFx] = useState(false);
+
+  const fxOptions: FxOptions = useMemo(() => ({
+    playbackRate: speed,
+    distortionAmount: distortion,
+    delayTime,
+    delayFeedback,
+    inputGain,
+    outputGain,
+    mix,
+    toneHz,
+    highpassHz,
+  }), [speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz]);
 
   const [currentAnalyser, setCurrentAnalyser] = useState<AnalyserNode | null>(null);
   const [previewAnalyser, setPreviewAnalyser] = useState<AnalyserNode | null>(null);
@@ -483,7 +538,16 @@ export default function Room() {
     setError(null);
     clearCaptures();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 48000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: false,
+        },
+        video: false,
+      });
       streamRef.current = stream;
       audioChunksRef.current = [];
       const mimeOptions = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
@@ -534,41 +598,41 @@ export default function Room() {
     setIsUploading(true);
     setError(null);
     try {
-      const hasFx = speed !== 1 || distortion > 0 || delayTime > 0 || delayFeedback > 0;
-      let finalBlob = mediaBlob;
-      let mime = mediaBlob.type || "audio/webm";
-      let ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
-
-      if (hasFx) {
-        try {
-          finalBlob = await renderWithFx(mediaBlob, {
-            playbackRate: speed,
-            distortionAmount: distortion,
-            delayTime,
-            delayFeedback,
-          });
-          mime = "audio/wav";
-          ext = "wav";
-        } catch (renderErr) {
-          console.warn("FX render failed, sending raw audio", renderErr);
-        }
-      }
+      const mime = mediaBlob.type || "audio/webm";
+      const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
 
       const urlData = await requestUploadUrlMutation.mutateAsync({
         data: {
           name: `capture.${ext}`,
-          size: finalBlob.size,
+          size: mediaBlob.size,
           contentType: mime,
         },
       });
 
       const uploadRes = await fetch(urlData.uploadURL, {
         method: "PUT",
-        body: finalBlob,
+        body: mediaBlob,
         headers: { "Content-Type": mime },
       });
 
       if (!uploadRes.ok) throw new Error("Upload failed");
+
+      const hasFx = speed !== 1 || distortion > 0 || delayTime > 0 || delayFeedback > 0
+        || inputGain !== 1 || outputGain !== 0.9 || mix !== 0.28 || toneHz !== 2800 || highpassHz !== 80;
+
+      const mediaMeta = hasFx ? {
+        fx: {
+          playbackRate: speed,
+          distortionAmount: distortion,
+          delayTime,
+          delayFeedback,
+          inputGain,
+          outputGain,
+          mix,
+          toneHz,
+          highpassHz,
+        },
+      } : null;
 
       await new Promise<void>((resolve, reject) => {
         sendMessageMutation.mutate(
@@ -578,6 +642,7 @@ export default function Room() {
               content: content.trim() || null,
               mediaType: "audio",
               mediaUrl: urlData.objectPath,
+              mediaMeta,
             },
           },
           {
@@ -596,7 +661,7 @@ export default function Room() {
     } finally {
       setIsUploading(false);
     }
-  }, [content, roomId, speed, distortion, delayTime, delayFeedback, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
+  }, [content, roomId, speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
 
   const handleSendText = (e: React.FormEvent) => {
     e.preventDefault();
@@ -727,101 +792,90 @@ export default function Room() {
       {showFx && (
         <div className="shrink-0 mb-2 p-3 border border-border/50 bg-card/50 space-y-2">
           <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">INPUT</label>
+            <input type="range" min="0.5" max="2" step="0.05" value={inputGain} onChange={(e) => setInputGain(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{inputGain.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">SPEED</label>
-            <input
-              type="range"
-              min="0.25"
-              max="2"
-              step="0.05"
-              value={speed}
-              onChange={(e) => setSpeed(parseFloat(e.target.value))}
-              className="flex-1 h-1 cursor-pointer"
-              style={{ accentColor: "rgba(40,80,180,0.85)" }}
-            />
+            <input type="range" min="0.25" max="2" step="0.05" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
             <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{speed.toFixed(2)}x</span>
           </div>
           <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">HPASS</label>
+            <input type="range" min="40" max="180" step="1" value={highpassHz} onChange={(e) => setHighpassHz(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.65)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{highpassHz}Hz</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">TONE</label>
+            <input type="range" min="500" max="8000" step="100" value={toneHz} onChange={(e) => setToneHz(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.65)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{toneHz >= 1000 ? `${(toneHz / 1000).toFixed(1)}k` : `${toneHz}`}</span>
+          </div>
+          <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">CRUSH</label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-              value={distortion}
-              onChange={(e) => setDistortion(parseFloat(e.target.value))}
-              className="flex-1 h-1 cursor-pointer"
-              style={{ accentColor: "rgba(190,40,40,0.85)" }}
-            />
+            <input type="range" min="0" max="100" step="1" value={distortion} onChange={(e) => setDistortion(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.85)" }} />
             <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{distortion}</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">DELAY</label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={delayTime}
-              onChange={(e) => setDelayTime(parseFloat(e.target.value))}
-              className="flex-1 h-1 cursor-pointer"
-              style={{ accentColor: "rgba(40,80,180,0.85)" }}
-            />
+            <input type="range" min="0" max="1.2" step="0.01" value={delayTime} onChange={(e) => setDelayTime(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
             <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{delayTime.toFixed(2)}s</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">FEEDBACK</label>
-            <input
-              type="range"
-              min="0"
-              max="0.9"
-              step="0.01"
-              value={delayFeedback}
-              onChange={(e) => setDelayFeedback(parseFloat(e.target.value))}
-              className="flex-1 h-1 cursor-pointer"
-              style={{ accentColor: "rgba(190,40,40,0.65)" }}
-            />
+            <input type="range" min="0" max="0.75" step="0.01" value={delayFeedback} onChange={(e) => setDelayFeedback(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.65)" }} />
             <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{(delayFeedback * 100).toFixed(0)}%</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">MIX</label>
+            <input type="range" min="0" max="1" step="0.01" value={mix} onChange={(e) => setMix(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(130,60,180,0.85)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{(mix * 100).toFixed(0)}%</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">OUTPUT</label>
+            <input type="range" min="0.2" max="1.2" step="0.05" value={outputGain} onChange={(e) => setOutputGain(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{outputGain.toFixed(2)}</span>
           </div>
           <div className="flex flex-wrap gap-2 mt-1">
             <button
-              onClick={() => { setSpeed(1); setDistortion(0); setDelayTime(0); setDelayFeedback(0); }}
+              onClick={() => { setSpeed(CLEAN_FX.playbackRate!); setDistortion(CLEAN_FX.distortionAmount!); setDelayTime(CLEAN_FX.delayTime!); setDelayFeedback(CLEAN_FX.delayFeedback!); setInputGain(CLEAN_FX.inputGain!); setOutputGain(CLEAN_FX.outputGain!); setMix(CLEAN_FX.mix!); setToneHz(CLEAN_FX.toneHz!); setHighpassHz(CLEAN_FX.highpassHz!); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
             >
               CLEAN
             </button>
             <button
-              onClick={() => { setSpeed(0.5); setDistortion(40); setDelayTime(0.3); setDelayFeedback(0.5); }}
+              onClick={() => { setSpeed(1); setDistortion(18); setDelayTime(0.28); setDelayFeedback(0.42); setInputGain(1); setOutputGain(0.9); setMix(0.30); setToneHz(2400); setHighpassHz(80); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
             >
               HAUNTED
             </button>
             <button
-              onClick={() => { setSpeed(1.5); setDistortion(80); setDelayTime(0.1); setDelayFeedback(0.3); }}
+              onClick={() => { setSpeed(1); setDistortion(55); setDelayTime(0.08); setDelayFeedback(0.22); setInputGain(1); setOutputGain(0.9); setMix(0.22); setToneHz(1700); setHighpassHz(80); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
             >
               CRUSHED
             </button>
             <button
-              onClick={() => { setSpeed(0.75); setDistortion(10); setDelayTime(0.6); setDelayFeedback(0.7); }}
+              onClick={() => { setSpeed(1); setDistortion(8); setDelayTime(0.52); setDelayFeedback(0.48); setInputGain(1); setOutputGain(0.9); setMix(0.40); setToneHz(1100); setHighpassHz(80); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
             >
               SUBMERGED
             </button>
             <button
-              onClick={() => { setSpeed(0.35); setDistortion(65); setDelayTime(0.8); setDelayFeedback(0.85); }}
+              onClick={() => { setSpeed(1); setDistortion(42); setDelayTime(0.82); setDelayFeedback(0.68); setInputGain(1); setOutputGain(0.9); setMix(0.55); setToneHz(900); setHighpassHz(80); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
             >
               VOID
             </button>
             <button
-              onClick={() => { setSpeed(2); setDistortion(20); setDelayTime(0.05); setDelayFeedback(0.15); }}
+              onClick={() => { setSpeed(1); setDistortion(14); setDelayTime(0.05); setDelayFeedback(0.14); setInputGain(1); setOutputGain(0.9); setMix(0.16); setToneHz(4200); setHighpassHz(80); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
             >
               NERVE
             </button>
           </div>
           <div className="text-[8px] font-mono text-muted-foreground/50 mt-1 tracking-wider">
-            signal: waveshaper distortion + delay chain
+            signal: input → highpass → compressor → dry/wet split → waveshaper → delay → limiter → output
           </div>
         </div>
       )}
@@ -888,10 +942,7 @@ export default function Room() {
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
-                  playbackRate={speed}
-                  distortionAmount={distortion}
-                  delayTime={delayTime}
-                  delayFeedback={delayFeedback}
+                  fx={(msg as any).mediaMeta?.fx ?? CLEAN_FX}
                   muted={isThisMuted}
                   onAnalyser={isThisPlaying ? setCurrentAnalyser : undefined}
                 />
@@ -949,10 +1000,7 @@ export default function Room() {
             onPlay={() => setPreviewPlaying(true)}
             onStop={() => { setPreviewPlaying(false); setPreviewAnalyser(null); }}
             onEnded={() => { setPreviewPlaying(false); setPreviewAnalyser(null); }}
-            playbackRate={speed}
-            distortionAmount={distortion}
-            delayTime={delayTime}
-            delayFeedback={delayFeedback}
+            fx={fxOptions}
             muted={false}
             onAnalyser={setPreviewAnalyser}
           />

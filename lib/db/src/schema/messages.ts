@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { roomsTable } from "./rooms";
@@ -11,8 +11,9 @@ export const messagesTable = pgTable("messages", {
   content: text("content").notNull().default(""),
   isSystemMessage: boolean("is_system_message").notNull().default(false),
   maskedSenderLabel: text("masked_sender_label"),
-  mediaType: text("media_type"), // 'image' | 'audio' | null
-  mediaUrl: text("media_url"),   // objectPath for stored media
+  mediaType: text("media_type"),
+  mediaUrl: text("media_url"),
+  mediaMeta: jsonb("media_meta"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
