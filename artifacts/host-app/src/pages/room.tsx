@@ -19,7 +19,7 @@ type PlaybackMode = "single" | "continuous";
 
 const CLEAN_FX: FxOptions = {
   playbackRate: 1, distortionAmount: 0, delayTime: 0, delayFeedback: 0,
-  inputGain: 1, outputGain: 0.9, mix: 0.08, toneHz: 5200, highpassHz: 80,
+  inputGain: 1, outputGain: 0.9, mix: 0.28, toneHz: 2800, highpassHz: 80,
 };
 
 function BlobAudioPlayer({
@@ -792,90 +792,90 @@ export default function Room() {
       {showFx && (
         <div className="shrink-0 mb-2 p-3 border border-border/50 bg-card/50 space-y-2">
           <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">INPUT</label>
-            <input type="range" min="0.5" max="2" step="0.05" value={inputGain} onChange={(e) => setInputGain(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{inputGain.toFixed(2)}</span>
-          </div>
-          <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">SPEED</label>
             <input type="range" min="0.25" max="2" step="0.05" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{speed.toFixed(2)}x</span>
+            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{speed.toFixed(2)}x</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">INPUT</label>
+            <input type="range" min="0.5" max="2" step="0.01" value={inputGain} onChange={(e) => setInputGain(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{inputGain.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">OUTPUT</label>
+            <input type="range" min="0.2" max="1.2" step="0.01" value={outputGain} onChange={(e) => setOutputGain(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{outputGain.toFixed(2)}</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">HPASS</label>
-            <input type="range" min="40" max="180" step="1" value={highpassHz} onChange={(e) => setHighpassHz(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.65)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{highpassHz}Hz</span>
+            <input type="range" min="40" max="180" step="1" value={highpassHz} onChange={(e) => setHighpassHz(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.65)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{Math.round(highpassHz)}Hz</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">TONE</label>
-            <input type="range" min="500" max="8000" step="100" value={toneHz} onChange={(e) => setToneHz(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.65)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{toneHz >= 1000 ? `${(toneHz / 1000).toFixed(1)}k` : `${toneHz}`}</span>
+            <input type="range" min="500" max="8000" step="10" value={toneHz} onChange={(e) => setToneHz(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{toneHz >= 1000 ? `${(toneHz / 1000).toFixed(1)}k` : `${Math.round(toneHz)}`}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">MIX</label>
+            <input type="range" min="0" max="1" step="0.01" value={mix} onChange={(e) => setMix(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.85)" }} />
+            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{Math.round(mix * 100)}%</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">CRUSH</label>
             <input type="range" min="0" max="100" step="1" value={distortion} onChange={(e) => setDistortion(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{distortion}</span>
+            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{distortion}</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">DELAY</label>
             <input type="range" min="0" max="1.2" step="0.01" value={delayTime} onChange={(e) => setDelayTime(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{delayTime.toFixed(2)}s</span>
+            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{delayTime.toFixed(2)}s</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">FEEDBACK</label>
             <input type="range" min="0" max="0.75" step="0.01" value={delayFeedback} onChange={(e) => setDelayFeedback(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.65)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{(delayFeedback * 100).toFixed(0)}%</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">MIX</label>
-            <input type="range" min="0" max="1" step="0.01" value={mix} onChange={(e) => setMix(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(130,60,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{(mix * 100).toFixed(0)}%</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">OUTPUT</label>
-            <input type="range" min="0.2" max="1.2" step="0.05" value={outputGain} onChange={(e) => setOutputGain(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{outputGain.toFixed(2)}</span>
+            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{Math.round(delayFeedback * 100)}%</span>
           </div>
           <div className="flex flex-wrap gap-2 mt-1">
             <button
-              onClick={() => { setSpeed(CLEAN_FX.playbackRate!); setDistortion(CLEAN_FX.distortionAmount!); setDelayTime(CLEAN_FX.delayTime!); setDelayFeedback(CLEAN_FX.delayFeedback!); setInputGain(CLEAN_FX.inputGain!); setOutputGain(CLEAN_FX.outputGain!); setMix(CLEAN_FX.mix!); setToneHz(CLEAN_FX.toneHz!); setHighpassHz(CLEAN_FX.highpassHz!); }}
+              onClick={() => { setSpeed(1); setInputGain(1); setOutputGain(0.9); setHighpassHz(80); setToneHz(2800); setMix(0.28); setDistortion(0); setDelayTime(0); setDelayFeedback(0); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
             >
               CLEAN
             </button>
             <button
-              onClick={() => { setSpeed(1); setDistortion(18); setDelayTime(0.28); setDelayFeedback(0.42); setInputGain(1); setOutputGain(0.9); setMix(0.30); setToneHz(2400); setHighpassHz(80); }}
+              onClick={() => { setSpeed(0.92); setInputGain(1.05); setOutputGain(0.86); setHighpassHz(95); setToneHz(2400); setMix(0.30); setDistortion(18); setDelayTime(0.28); setDelayFeedback(0.42); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
             >
               HAUNTED
             </button>
             <button
-              onClick={() => { setSpeed(1); setDistortion(55); setDelayTime(0.08); setDelayFeedback(0.22); setInputGain(1); setOutputGain(0.9); setMix(0.22); setToneHz(1700); setHighpassHz(80); }}
+              onClick={() => { setSpeed(1.18); setInputGain(1.15); setOutputGain(0.82); setHighpassHz(120); setToneHz(1700); setMix(0.22); setDistortion(55); setDelayTime(0.08); setDelayFeedback(0.22); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
             >
               CRUSHED
             </button>
             <button
-              onClick={() => { setSpeed(1); setDistortion(8); setDelayTime(0.52); setDelayFeedback(0.48); setInputGain(1); setOutputGain(0.9); setMix(0.40); setToneHz(1100); setHighpassHz(80); }}
+              onClick={() => { setSpeed(0.84); setInputGain(1); setOutputGain(0.88); setHighpassHz(70); setToneHz(1100); setMix(0.40); setDistortion(8); setDelayTime(0.52); setDelayFeedback(0.48); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
             >
               SUBMERGED
             </button>
             <button
-              onClick={() => { setSpeed(1); setDistortion(42); setDelayTime(0.82); setDelayFeedback(0.68); setInputGain(1); setOutputGain(0.9); setMix(0.55); setToneHz(900); setHighpassHz(80); }}
+              onClick={() => { setSpeed(0.68); setInputGain(1.2); setOutputGain(0.72); setHighpassHz(105); setToneHz(900); setMix(0.55); setDistortion(42); setDelayTime(0.82); setDelayFeedback(0.68); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
             >
               VOID
             </button>
             <button
-              onClick={() => { setSpeed(1); setDistortion(14); setDelayTime(0.05); setDelayFeedback(0.14); setInputGain(1); setOutputGain(0.9); setMix(0.16); setToneHz(4200); setHighpassHz(80); }}
+              onClick={() => { setSpeed(1.32); setInputGain(0.95); setOutputGain(0.92); setHighpassHz(130); setToneHz(4200); setMix(0.16); setDistortion(14); setDelayTime(0.05); setDelayFeedback(0.14); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
             >
               NERVE
             </button>
           </div>
           <div className="text-[8px] font-mono text-muted-foreground/50 mt-1 tracking-wider">
-            signal: input → highpass → compressor → dry/wet split → waveshaper → delay → limiter → output
+            signal: input gain → highpass → compressor → dry/wet split → tone/distortion/delay → limiter
           </div>
         </div>
       )}
