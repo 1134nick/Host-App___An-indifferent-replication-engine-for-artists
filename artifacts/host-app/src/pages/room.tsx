@@ -11,7 +11,7 @@ import {
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Mic, MicOff, X, Send, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Radio, Zap } from "lucide-react";
-import { fetchAndDecode, createEchoNode, getAudioContext, type EchoNode } from "../lib/audio-engine";
+import { fetchAndDecode, createEchoNode, getAudioContext, renderWithFx, type EchoNode } from "../lib/audio-engine";
 import Waveform from "../components/waveform";
 import AmbientDrone from "../components/ambient-drone";
 
@@ -534,19 +534,37 @@ export default function Room() {
     setIsUploading(true);
     setError(null);
     try {
-      const mime = mediaBlob.type || "audio/webm";
-      const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
+      const hasFx = speed !== 1 || distortion > 0 || delayTime > 0 || delayFeedback > 0;
+      let finalBlob = mediaBlob;
+      let mime = mediaBlob.type || "audio/webm";
+      let ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
+
+      if (hasFx) {
+        try {
+          finalBlob = await renderWithFx(mediaBlob, {
+            playbackRate: speed,
+            distortionAmount: distortion,
+            delayTime,
+            delayFeedback,
+          });
+          mime = "audio/wav";
+          ext = "wav";
+        } catch (renderErr) {
+          console.warn("FX render failed, sending raw audio", renderErr);
+        }
+      }
+
       const urlData = await requestUploadUrlMutation.mutateAsync({
         data: {
           name: `capture.${ext}`,
-          size: mediaBlob.size,
+          size: finalBlob.size,
           contentType: mime,
         },
       });
 
       const uploadRes = await fetch(urlData.uploadURL, {
         method: "PUT",
-        body: mediaBlob,
+        body: finalBlob,
         headers: { "Content-Type": mime },
       });
 
@@ -578,7 +596,7 @@ export default function Room() {
     } finally {
       setIsUploading(false);
     }
-  }, [content, roomId, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
+  }, [content, roomId, speed, distortion, delayTime, delayFeedback, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
 
   const handleSendText = (e: React.FormEvent) => {
     e.preventDefault();
