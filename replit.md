@@ -102,7 +102,7 @@ Tables: `users`, `cohorts`, `applications`, `cohort_roles`, `rooms`, `room_membe
 Members can send photos, voice messages, and short videos in rooms. All identities remain hidden.
 
 - **Photo**: getUserMedia → canvas capture → JPEG blob → presigned URL upload → message with `mediaType: "image"`
-- **Voice**: MediaRecorder → auto-detected MIME (webm/mp4/ogg) → presigned URL upload → message with `mediaType: "audio"`
+- **Voice**: MediaRecorder → auto-detected MIME (webm/mp4/ogg) → **preview with FX** → presigned URL upload → message with `mediaType: "audio"`. After recording, members enter a preview step where they can play back their recording through the FX chain (speed, crush, delay, feedback, presets), add an optional caption, then send or discard. FX are client-side only — the raw audio file is uploaded.
 - **Video**: getUserMedia (video+audio) → MediaRecorder with 20s limit → presigned URL upload → message with `mediaType: "video"`
 - **Captions**: optional text alongside media
 - **Delete**: users can delete their own messages via `DELETE /api/rooms/:roomId/messages/:messageId`. Only the DB row is removed — media files in object storage are intentionally preserved forever.

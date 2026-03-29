@@ -288,7 +288,7 @@ function BlobAudioPlayer({
   );
 }
 
-type MediaMode = "none" | "recording";
+type MediaMode = "none" | "recording" | "preview";
 const TRACK_OPTIONS = [1, 2, 3, Infinity] as const;
 
 export default function Room() {
@@ -329,6 +329,9 @@ export default function Room() {
   const [showFx, setShowFx] = useState(false);
 
   const [currentAnalyser, setCurrentAnalyser] = useState<AnalyserNode | null>(null);
+  const [previewAnalyser, setPreviewAnalyser] = useState<AnalyserNode | null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
 
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -453,10 +456,26 @@ export default function Room() {
     setMediaMode("none");
     setIsRecording(false);
     setRecordingSeconds(0);
+    setPreviewPlaying(false);
+    setPreviewAnalyser(null);
+    if (previewBlobUrl) {
+      URL.revokeObjectURL(previewBlobUrl);
+      setPreviewBlobUrl(null);
+    }
     if (timerRef.current) clearInterval(timerRef.current);
     stopStream();
     setTimeout(() => { cancelledRef.current = false; }, 50);
-  }, [stopStream]);
+  }, [stopStream, previewBlobUrl]);
+
+  useEffect(() => {
+    if (capturedAudio) {
+      const url = URL.createObjectURL(capturedAudio);
+      setPreviewBlobUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setPreviewBlobUrl(null);
+    }
+  }, [capturedAudio]);
 
   useEffect(() => () => { stopStream(); if (timerRef.current) clearInterval(timerRef.current); }, [stopStream]);
 
@@ -480,6 +499,8 @@ export default function Room() {
         if (cancelledRef.current) return;
         const blob = new Blob(audioChunksRef.current, { type: actualMime });
         setCapturedAudio(blob);
+        setMediaMode("preview");
+        setShowFx(true);
         stopStream();
       };
       recorder.start(250);
@@ -561,7 +582,6 @@ export default function Room() {
 
   const handleSendText = (e: React.FormEvent) => {
     e.preventDefault();
-    if (capturedAudio) { uploadAndSend(capturedAudio); return; }
     if (!content.trim()) return;
     sendMessageMutation.mutate(
       { roomId, data: { content } },
@@ -594,7 +614,6 @@ export default function Room() {
   }
 
   const isPeripheral = role?.roleType === "peripheral";
-  const hasPending = !!capturedAudio;
   const isBusy = sendMessageMutation.isPending || isUploading;
 
   return (
@@ -889,45 +908,50 @@ export default function Room() {
         </div>
       )}
 
-      {capturedAudio && !isRecording && (
-        <div className="shrink-0 mb-4 border border-border bg-card flex items-center gap-3 px-3 py-2">
-          <span className="w-2 h-2 rounded-full shrink-0 bg-muted-foreground" />
-          <span className="text-xs font-mono text-muted-foreground flex-1 lowercase">voice ready</span>
-          <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      <div className="shrink-0 bg-card border border-border p-2">
-        {isPeripheral ? (
-          <div className="p-4 text-center text-xs uppercase tracking-widest text-muted-foreground opacity-40 lowercase">
-            observation only
+      {mediaMode === "preview" && previewBlobUrl && (
+        <div className="shrink-0 mb-4 border border-[var(--depth-blue)]/40 bg-card p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--depth-blue)]">
+              preview — adjust fx before sending
+            </span>
+            <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        ) : (
-          <form onSubmit={handleSendText} className="flex gap-2 items-center">
-            {!hasPending && (
-              <button
-                type="button"
-                onClick={isRecording && mediaMode === "recording" ? stopRecording : startRecording}
-                title={isRecording && mediaMode === "recording" ? "Stop recording" : "Record voice"}
-                className={`p-2 transition-colors ${isRecording && mediaMode === "recording" ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                {isRecording && mediaMode === "recording" ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              </button>
-            )}
+
+          {previewAnalyser && previewPlaying && (
+            <div className="border border-border/30 bg-black/40 px-2 py-1">
+              <Waveform analyser={previewAnalyser} playing={previewPlaying} height={36} />
+            </div>
+          )}
+
+          <BlobAudioPlayer
+            src={previewBlobUrl}
+            isActive={true}
+            onPlay={() => setPreviewPlaying(true)}
+            onStop={() => { setPreviewPlaying(false); setPreviewAnalyser(null); }}
+            onEnded={() => { setPreviewPlaying(false); setPreviewAnalyser(null); }}
+            playbackRate={speed}
+            distortionAmount={distortion}
+            delayTime={delayTime}
+            delayFeedback={delayFeedback}
+            muted={false}
+            onAnalyser={setPreviewAnalyser}
+          />
+
+          <div className="flex gap-2 items-center pt-1">
             <input
               type="text"
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder={hasPending ? "caption (optional)..." : "speak..."}
-              className="flex-1 bg-background border-none px-4 py-3 focus:outline-none font-mono text-sm"
+              placeholder="caption (optional)..."
+              className="flex-1 bg-background border-b border-border px-2 py-2 focus:outline-none focus:border-[var(--depth-blue)] font-mono text-sm transition-colors"
               disabled={isBusy}
             />
             <button
-              type="submit"
-              disabled={(!content.trim() && !hasPending) || isBusy}
-              className="flex items-center gap-2 px-5 py-3 border border-foreground text-foreground font-medium tracking-widest text-xs uppercase hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
+              onClick={() => { if (capturedAudio) uploadAndSend(capturedAudio); }}
+              disabled={isBusy}
+              className="flex items-center gap-2 px-5 py-2 border border-foreground text-foreground font-medium tracking-widest text-xs uppercase hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
             >
               {isBusy ? (
                 <span className="animate-pulse">...</span>
@@ -938,9 +962,59 @@ export default function Room() {
                 </>
               )}
             </button>
-          </form>
-        )}
-      </div>
+            <button
+              onClick={clearCaptures}
+              disabled={isBusy}
+              className="px-4 py-2 border border-destructive/50 text-destructive text-xs font-mono uppercase hover:bg-destructive/10 transition-colors disabled:opacity-30"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {mediaMode !== "preview" && (
+        <div className="shrink-0 bg-card border border-border p-2">
+          {isPeripheral ? (
+            <div className="p-4 text-center text-xs uppercase tracking-widest text-muted-foreground opacity-40 lowercase">
+              observation only
+            </div>
+          ) : (
+            <form onSubmit={handleSendText} className="flex gap-2 items-center">
+              <button
+                type="button"
+                onClick={isRecording && mediaMode === "recording" ? stopRecording : startRecording}
+                title={isRecording && mediaMode === "recording" ? "Stop recording" : "Record voice"}
+                className={`p-2 transition-colors ${isRecording && mediaMode === "recording" ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {isRecording && mediaMode === "recording" ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              </button>
+              <input
+                type="text"
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="speak..."
+                className="flex-1 bg-background border-none px-4 py-3 focus:outline-none font-mono text-sm"
+                disabled={isBusy}
+              />
+              <button
+                type="submit"
+                disabled={!content.trim() || isBusy}
+                className="flex items-center gap-2 px-5 py-3 border border-foreground text-foreground font-medium tracking-widest text-xs uppercase hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
+              >
+                {isBusy ? (
+                  <span className="animate-pulse">...</span>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    Send
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </div>
   );
 }
