@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { backfillMemberships } from "./lib/backfill";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,12 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  backfillMemberships().then((count) => {
+    if (count > 0) {
+      logger.info({ membershipsAdded: count }, "Backfilled missing room memberships");
+    }
+  }).catch((err) => {
+    logger.error({ err }, "Failed to backfill memberships");
+  });
 });
