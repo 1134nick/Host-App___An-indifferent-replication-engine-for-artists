@@ -11,7 +11,7 @@ import {
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Mic, MicOff, X, Send, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Radio, Zap } from "lucide-react";
-import { fetchAndDecode, createEchoNode, getAudioContext, type EchoNode, type FxOptions, type ModType, type DelayType } from "../lib/audio-engine";
+import { fetchAndDecode, createEchoNode, getAudioContext, renderWithFx, type EchoNode, type FxOptions, type ModType, type DelayType } from "../lib/audio-engine";
 import Waveform from "../components/waveform";
 import AmbientDrone from "../components/ambient-drone";
 
@@ -408,6 +408,7 @@ export default function Room() {
   const [eqHigh, setEqHigh] = useState(0);
   const [vocoderEnabled, setVocoderEnabled] = useState(false);
   const [vocoderFormant, setVocoderFormant] = useState(0);
+  const [sendMode, setSendMode] = useState<"raw" | "baked">("raw");
 
   const fxOptions: FxOptions = useMemo(() => ({
     playbackRate: speed,
@@ -429,6 +430,13 @@ export default function Room() {
     vocoderEnabled,
     vocoderFormant,
   }), [speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, modType, modRate, modDepth, delayType, delayTimeR, eqLow, eqHigh, vocoderEnabled, vocoderFormant]);
+
+  const hasFx = useMemo(() =>
+    speed !== 1 || distortion > 0 || delayTime > 0 || delayFeedback > 0
+    || inputGain !== 1 || outputGain !== 0.9 || mix !== 0.28 || toneHz !== 2800 || highpassHz !== 80
+    || modType !== "off" || delayType !== "mono" || eqLow !== 0 || eqHigh !== 0
+    || vocoderEnabled || vocoderFormant !== 0,
+  [speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, modType, delayType, eqLow, eqHigh, vocoderEnabled, vocoderFormant]);
 
   const [currentAnalyser, setCurrentAnalyser] = useState<AnalyserNode | null>(null);
   const [previewAnalyser, setPreviewAnalyser] = useState<AnalyserNode | null>(null);
@@ -645,32 +653,14 @@ export default function Room() {
     setIsUploading(true);
     setError(null);
     try {
-      const mime = mediaBlob.type || "audio/webm";
-      const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
+      const isBaked = sendMode === "baked" && hasFx;
 
-      const urlData = await requestUploadUrlMutation.mutateAsync({
-        data: {
-          name: `capture.${ext}`,
-          size: mediaBlob.size,
-          contentType: mime,
-        },
-      });
+      let uploadBlob: Blob;
+      let mime: string;
+      let ext: string;
 
-      const uploadRes = await fetch(urlData.uploadURL, {
-        method: "PUT",
-        body: mediaBlob,
-        headers: { "Content-Type": mime },
-      });
-
-      if (!uploadRes.ok) throw new Error("Upload failed");
-
-      const hasFx = speed !== 1 || distortion > 0 || delayTime > 0 || delayFeedback > 0
-        || inputGain !== 1 || outputGain !== 0.9 || mix !== 0.28 || toneHz !== 2800 || highpassHz !== 80
-        || modType !== "off" || delayType !== "mono" || eqLow !== 0 || eqHigh !== 0
-        || vocoderEnabled || vocoderFormant !== 0;
-
-      const mediaMeta = hasFx ? {
-        fx: {
+      if (isBaked) {
+        uploadBlob = await renderWithFx(mediaBlob, {
           playbackRate: speed,
           distortionAmount: distortion,
           delayTime,
@@ -689,8 +679,54 @@ export default function Room() {
           eqHigh,
           vocoderEnabled,
           vocoderFormant,
+        });
+        mime = "audio/wav";
+        ext = "wav";
+      } else {
+        uploadBlob = mediaBlob;
+        mime = mediaBlob.type || "audio/webm";
+        ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
+      }
+
+      const urlData = await requestUploadUrlMutation.mutateAsync({
+        data: {
+          name: `capture.${ext}`,
+          size: uploadBlob.size,
+          contentType: mime,
         },
-      } : null;
+      });
+
+      const uploadRes = await fetch(urlData.uploadURL, {
+        method: "PUT",
+        body: uploadBlob,
+        headers: { "Content-Type": mime },
+      });
+
+      if (!uploadRes.ok) throw new Error("Upload failed");
+
+      const fxData = {
+        playbackRate: speed,
+        distortionAmount: distortion,
+        delayTime,
+        delayFeedback,
+        inputGain,
+        outputGain,
+        mix,
+        toneHz,
+        highpassHz,
+        modType,
+        modRate,
+        modDepth,
+        delayType,
+        delayTimeR,
+        eqLow,
+        eqHigh,
+        vocoderEnabled,
+        vocoderFormant,
+        ...(isBaked ? { baked: true } : {}),
+      };
+
+      const mediaMeta = hasFx ? { fx: fxData } : null;
 
       await new Promise<void>((resolve, reject) => {
         sendMessageMutation.mutate(
@@ -719,7 +755,7 @@ export default function Room() {
     } finally {
       setIsUploading(false);
     }
-  }, [content, roomId, speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
+  }, [content, roomId, speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, modType, modRate, modDepth, delayType, delayTimeR, eqLow, eqHigh, vocoderEnabled, vocoderFormant, sendMode, hasFx, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
 
   const handleSendText = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1081,10 +1117,13 @@ export default function Room() {
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
-                  fx={fxOptions}
+                  fx={(msg.mediaMeta as any)?.fx?.baked ? CLEAN_FX : fxOptions}
                   muted={isThisMuted}
                   onAnalyser={isThisPlaying ? setCurrentAnalyser : undefined}
                 />
+              )}
+              {(msg.mediaMeta as any)?.fx?.baked && (
+                <span className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/40 mt-1">baked</span>
               )}
             </div>
           );
@@ -1144,6 +1183,27 @@ export default function Room() {
             onAnalyser={setPreviewAnalyser}
           />
 
+          <div className="flex items-center gap-2 pt-1">
+            <div className="flex border border-border">
+              <button
+                onClick={() => setSendMode("raw")}
+                disabled={isBusy}
+                className={`text-[8px] font-mono uppercase tracking-widest px-3 py-1.5 transition-colors ${sendMode === "raw" ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                RAW
+              </button>
+              <button
+                onClick={() => setSendMode("baked")}
+                disabled={isBusy}
+                className={`text-[8px] font-mono uppercase tracking-widest px-3 py-1.5 border-l border-border transition-colors ${sendMode === "baked" ? "bg-[var(--depth-red)]/10 text-[var(--depth-red)]" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                BAKED
+              </button>
+            </div>
+            <span className="text-[7px] font-mono text-muted-foreground/50 tracking-wider">
+              {sendMode === "baked" ? (hasFx ? "fx rendered into file" : "no fx to bake — will send raw") : "fx applied live on playback"}
+            </span>
+          </div>
           <div className="flex gap-2 items-center pt-1">
             <input
               type="text"
@@ -1159,7 +1219,7 @@ export default function Room() {
               className="flex items-center gap-2 px-5 py-2 border border-foreground text-foreground font-medium tracking-widest text-xs uppercase hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
             >
               {isBusy ? (
-                <span className="animate-pulse">...</span>
+                <span className="animate-pulse">{sendMode === "baked" ? "rendering..." : "..."}</span>
               ) : (
                 <>
                   <Send className="w-3.5 h-3.5" />

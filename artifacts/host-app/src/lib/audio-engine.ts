@@ -605,12 +605,14 @@ export async function renderWithFx(
   const rate = opts.playbackRate ?? 1;
   const adjustedDuration = inputBuffer.duration / rate;
   const dt = opts.delayTime ?? 0;
+  const dtR = opts.delayTimeR ?? 0;
+  const effectiveDelay = Math.max(dt, dtR);
   const fb = opts.delayFeedback ?? 0;
-  const tailRepeats = dt > 0 && fb > 0
+  const tailRepeats = effectiveDelay > 0 && fb > 0
     ? Math.max(1, Math.ceil(Math.log(0.001) / Math.log(fb)))
     : 0;
-  const tailTime = dt > 0 && fb > 0
-    ? Math.min(dt * tailRepeats, 8)
+  const tailTime = effectiveDelay > 0 && fb > 0
+    ? Math.min(effectiveDelay * tailRepeats, 8)
     : 0;
   const totalDuration = adjustedDuration + tailTime + 0.5;
 
