@@ -17,6 +17,20 @@ import AmbientDrone from "../components/ambient-drone";
 
 type PlaybackMode = "single" | "continuous";
 
+interface MediaMetaFx {
+  fx?: {
+    baked?: boolean;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+function isBakedMessage(mediaMeta: { [key: string]: unknown } | null | undefined): boolean {
+  if (!mediaMeta) return false;
+  const meta = mediaMeta as MediaMetaFx;
+  return meta.fx?.baked === true;
+}
+
 const CLEAN_FX: FxOptions = {
   playbackRate: 1, distortionAmount: 0, delayTime: 0, delayFeedback: 0,
   inputGain: 1, outputGain: 0.9, mix: 0.28, toneHz: 2800, highpassHz: 80,
@@ -1117,12 +1131,12 @@ export default function Room() {
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
-                  fx={(msg.mediaMeta as any)?.fx?.baked ? CLEAN_FX : fxOptions}
+                  fx={isBakedMessage(msg.mediaMeta) ? CLEAN_FX : fxOptions}
                   muted={isThisMuted}
                   onAnalyser={isThisPlaying ? setCurrentAnalyser : undefined}
                 />
               )}
-              {(msg.mediaMeta as any)?.fx?.baked && (
+              {isBakedMessage(msg.mediaMeta) && (
                 <span className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/40 mt-1">baked</span>
               )}
             </div>
