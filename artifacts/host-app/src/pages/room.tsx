@@ -667,7 +667,7 @@ export default function Room() {
     setIsUploading(true);
     setError(null);
     try {
-      const isBaked = sendMode === "baked" && hasFx;
+      const isBaked = sendMode === "baked";
 
       let uploadBlob: Blob;
       let mime: string;
@@ -740,7 +740,7 @@ export default function Room() {
         ...(isBaked ? { baked: true } : {}),
       };
 
-      const mediaMeta = hasFx ? { fx: fxData } : null;
+      const mediaMeta = (hasFx || isBaked) ? { fx: fxData } : null;
 
       await new Promise<void>((resolve, reject) => {
         sendMessageMutation.mutate(
@@ -1215,7 +1215,7 @@ export default function Room() {
               </button>
             </div>
             <span className="text-[7px] font-mono text-muted-foreground/50 tracking-wider">
-              {sendMode === "baked" ? (hasFx ? "fx rendered into file" : "no fx to bake — will send raw") : "fx applied live on playback"}
+              {sendMode === "baked" ? "fx chain rendered into file" : "fx applied live on playback"}
             </span>
           </div>
           <div className="flex gap-2 items-center pt-1">
