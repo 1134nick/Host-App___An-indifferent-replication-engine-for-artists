@@ -315,6 +315,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /rooms/{roomId}:
+    delete:
+      operationId: deleteRoom
+      tags: [rooms]
+      summary: Delete a room (creator or admin only)
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Room deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "403":
+          description: Not authorized to delete this room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Room not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /rooms/{roomId}/messages:
     get:
       operationId: getRoomMessages

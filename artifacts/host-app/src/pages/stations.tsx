@@ -1,6 +1,6 @@
-import { useGetMyRole, useGetMyRooms, useCreateChannel } from "@workspace/api-client-react";
+import { useGetMyRole, useGetMyRooms, useCreateChannel, useDeleteRoom } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
-import { Plus, Radio, AlertCircle } from "lucide-react";
+import { Plus, Radio, AlertCircle, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,8 +10,10 @@ export default function Stations() {
   const { data: rooms, isLoading: roomsLoading } = useGetMyRooms();
   const [, setLocation] = useLocation();
   const createChannel = useCreateChannel();
+  const deleteRoom = useDeleteRoom();
   const queryClient = useQueryClient();
   const [createError, setCreateError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   if (roleLoading || roomsLoading) {
     return (
@@ -96,26 +98,66 @@ export default function Stations() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
               >
-                <Link href={`/rooms/${room.id}`}>
-                  <div className="group bg-card border border-border p-5 hover:border-primary/50 transition-colors cursor-pointer weave-pattern">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-4">
-                        <Radio className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                        <div>
-                          <span className="text-sm font-mono tracking-wider uppercase block">
-                            channel_{String(room.channelNumber).padStart(2, "0")}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground font-mono tracking-widest">
-                            {room.memberCount} present
-                          </span>
-                        </div>
+                <div className="group bg-card border border-border p-5 hover:border-primary/50 transition-colors weave-pattern">
+                  <div className="flex justify-between items-center">
+                    <Link href={`/rooms/${room.id}`} className="flex items-center gap-4 flex-1 cursor-pointer">
+                      <Radio className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                      <div>
+                        <span className="text-sm font-mono tracking-wider uppercase block">
+                          channel_{String(room.channelNumber).padStart(2, "0")}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-mono tracking-widest">
+                          {room.memberCount} present
+                        </span>
                       </div>
-                      <span className="text-xs border border-border px-3 py-1 text-muted-foreground group-hover:text-foreground transition-colors font-mono uppercase tracking-widest">
-                        Enter
-                      </span>
+                    </Link>
+                    <div className="flex items-center gap-2">
+                      {confirmDeleteId === room.id ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] font-mono uppercase tracking-widest text-destructive">delete?</span>
+                          <button
+                            onClick={() => {
+                              deleteRoom.mutate(
+                                { roomId: room.id },
+                                {
+                                  onSuccess: () => {
+                                    queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
+                                    setConfirmDeleteId(null);
+                                  },
+                                },
+                              );
+                            }}
+                            disabled={deleteRoom.isPending}
+                            className="text-[9px] font-mono uppercase tracking-widest text-destructive hover:text-foreground px-2 py-1 border border-destructive/50 disabled:opacity-30"
+                          >
+                            {deleteRoom.isPending ? "..." : "yes"}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
+                          >
+                            no
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => setConfirmDeleteId(room.id)}
+                            className="text-muted-foreground/40 hover:text-destructive transition-colors p-1"
+                            title="Delete station"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          <Link href={`/rooms/${room.id}`}>
+                            <span className="text-xs border border-border px-3 py-1 text-muted-foreground group-hover:text-foreground transition-colors font-mono uppercase tracking-widest cursor-pointer">
+                              Enter
+                            </span>
+                          </Link>
+                        </>
+                      )}
                     </div>
                   </div>
-                </Link>
+                </div>
               </motion.div>
             ))}
           </div>

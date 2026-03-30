@@ -245,6 +245,10 @@ export interface AdminStats {
   spotsToFill: number;
 }
 
+export type DeleteRoom200 = {
+  success?: boolean;
+};
+
 export type GetRoomMessagesParams = {
   limit?: number;
   offset?: number;

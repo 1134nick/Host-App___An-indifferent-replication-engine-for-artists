@@ -1,6 +1,6 @@
-import { useGetMyRole, useGetMyRooms, useGetMyInstructions, useCreateChannel } from "@workspace/api-client-react";
+import { useGetMyRole, useGetMyRooms, useGetMyInstructions, useCreateChannel, useDeleteRoom } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
-import { Lock, MessageSquare, Plus } from "lucide-react";
+import { Lock, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -11,9 +11,11 @@ export default function Dashboard() {
   const { data: instructions } = useGetMyInstructions();
   const [, setLocation] = useLocation();
   const createChannel = useCreateChannel();
+  const deleteRoom = useDeleteRoom();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [channelName, setChannelName] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   if (roleLoading || roomsLoading) {
     return (
@@ -93,24 +95,64 @@ export default function Dashboard() {
               {memberChannels.length > 0 && (
                 <div className="space-y-2 pl-4 border-l border-border/50">
                   {memberChannels.map((room) => (
-                    <Link key={room.id} href={`/rooms/${room.id}`}>
-                      <div className="group bg-card border border-border p-4 hover:border-primary/50 transition-colors cursor-pointer">
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-3">
-                            <MessageSquare className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
-                            <span className="text-xs font-mono tracking-wider uppercase">
-                              {room.displayName || `Channel ${room.channelNumber}`}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground font-mono tracking-widest">
-                              {room.memberCount} present
-                            </span>
-                          </div>
-                          <span className="text-[10px] border border-border px-2 py-0.5 text-muted-foreground group-hover:text-foreground transition-colors font-mono">
-                            ENTER
+                    <div key={room.id} className="group bg-card border border-border p-4 hover:border-primary/50 transition-colors">
+                      <div className="flex justify-between items-center">
+                        <Link href={`/rooms/${room.id}`} className="flex items-center gap-3 flex-1 cursor-pointer">
+                          <MessageSquare className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                          <span className="text-xs font-mono tracking-wider uppercase">
+                            {room.displayName || `Channel ${room.channelNumber}`}
                           </span>
+                          <span className="text-[10px] text-muted-foreground font-mono tracking-widest">
+                            {room.memberCount} present
+                          </span>
+                        </Link>
+                        <div className="flex items-center gap-2">
+                          {confirmDeleteId === room.id ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-mono uppercase tracking-widest text-destructive">delete?</span>
+                              <button
+                                onClick={() => {
+                                  deleteRoom.mutate(
+                                    { roomId: room.id },
+                                    {
+                                      onSuccess: () => {
+                                        queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
+                                        setConfirmDeleteId(null);
+                                      },
+                                    },
+                                  );
+                                }}
+                                disabled={deleteRoom.isPending}
+                                className="text-[9px] font-mono uppercase tracking-widest text-destructive hover:text-foreground px-2 py-1 border border-destructive/50 disabled:opacity-30"
+                              >
+                                {deleteRoom.isPending ? "..." : "yes"}
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
+                              >
+                                no
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => setConfirmDeleteId(room.id)}
+                                className="text-muted-foreground/40 hover:text-destructive transition-colors p-1"
+                                title="Delete channel"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                              <Link href={`/rooms/${room.id}`}>
+                                <span className="text-[10px] border border-border px-2 py-0.5 text-muted-foreground group-hover:text-foreground transition-colors font-mono cursor-pointer">
+                                  ENTER
+                                </span>
+                              </Link>
+                            </>
+                          )}
                         </div>
                       </div>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               )}

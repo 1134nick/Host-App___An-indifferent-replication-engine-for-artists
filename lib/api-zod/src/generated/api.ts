@@ -203,6 +203,17 @@ export const CreateChannelBody = zod.object({
 });
 
 /**
+ * @summary Delete a room (creator or admin only)
+ */
+export const DeleteRoomParams = zod.object({
+  roomId: zod.coerce.number(),
+});
+
+export const DeleteRoomResponse = zod.object({
+  success: zod.boolean().optional(),
+});
+
+/**
  * @summary Get messages in a room
  */
 export const GetRoomMessagesParams = zod.object({

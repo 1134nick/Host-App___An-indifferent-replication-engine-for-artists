@@ -18,6 +18,7 @@ export * from "./cohortStatusProperty";
 export * from "./createChannelRequest";
 export * from "./createInstructionRequest";
 export * from "./deleteMessage200";
+export * from "./deleteRoom200";
 export * from "./errorResponse";
 export * from "./getRoomMessagesParams";
 export * from "./healthStatus";

@@ -183,6 +183,47 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
   }
 });
 
+router.delete("/:roomId", requireAuth, async (req, res) => {
+  const roomId = parseInt(req.params.roomId);
+  if (isNaN(roomId)) {
+    res.status(400).json({ error: "validation_error", message: "Invalid room ID" });
+    return;
+  }
+
+  try {
+    const [room] = await db.select().from(roomsTable).where(eq(roomsTable.id, roomId)).limit(1);
+
+    if (!room) {
+      res.status(404).json({ error: "not_found", message: "Room not found" });
+      return;
+    }
+
+    if (room.roomType === "general") {
+      res.status(403).json({ error: "forbidden", message: "Cannot delete the general channel" });
+      return;
+    }
+
+    const isCreator = room.createdByUserId === req.session.userId;
+    const isAdmin = req.session.isAdmin === true;
+
+    if (!isCreator && !isAdmin) {
+      res.status(403).json({ error: "forbidden", message: "Only the channel creator or an admin can delete this channel" });
+      return;
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.delete(messagesTable).where(eq(messagesTable.roomId, roomId));
+      await tx.delete(roomMembersTable).where(eq(roomMembersTable.roomId, roomId));
+      await tx.delete(roomsTable).where(eq(roomsTable.id, roomId));
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error deleting room");
+    res.status(500).json({ error: "internal_error", message: "Failed to delete room" });
+  }
+});
+
 router.delete("/:roomId/messages/:messageId", requireAuth, async (req, res) => {
   const roomId = parseInt(req.params.roomId);
   const messageId = parseInt(req.params.messageId);
