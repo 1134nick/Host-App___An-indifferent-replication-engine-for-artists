@@ -602,7 +602,7 @@ export async function renderWithFx(
   const arrayBuf = await sourceBlob.arrayBuffer();
   const inputBuffer = await ac.decodeAudioData(arrayBuf);
 
-  const rate = opts.playbackRate ?? 1;
+  const rate = Math.max(0.25, opts.playbackRate ?? 1);
   const adjustedDuration = inputBuffer.duration / rate;
   const dt = opts.delayTime ?? 0;
   const dtR = opts.delayTimeR ?? 0;

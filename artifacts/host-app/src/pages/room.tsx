@@ -1013,7 +1013,8 @@ export default function Room() {
             </div>
           )}
           <div className="border-t border-border/30 my-1" />
-          <div className="flex flex-wrap gap-2 mt-1">
+          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">PRESETS</div>
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => { setSpeed(1); setInputGain(1); setOutputGain(0.9); setHighpassHz(80); setToneHz(2800); setMix(0.28); setDistortion(0); setDelayTime(0); setDelayFeedback(0); setModType("off"); setModRate(1); setModDepth(0.5); setDelayType("mono"); setDelayTimeR(0); setEqLow(0); setEqHigh(0); setVocoderEnabled(false); setVocoderFormant(0); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
@@ -1062,6 +1063,83 @@ export default function Room() {
             >
               CATHEDRAL
             </button>
+          </div>
+          <div className="border-t border-border/20 my-2" />
+          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">CONSTANTS</div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => { setSpeed(0.25); setInputGain(0.5); setOutputGain(0.2); setHighpassHz(500); setToneHz(500); setMix(0); setDistortion(0); setDelayTime(0); setDelayFeedback(0); setModType("off"); setModRate(0.1); setModDepth(0); setDelayType("mono"); setDelayTimeR(0); setEqLow(-12); setEqHigh(-12); setVocoderEnabled(false); setVocoderFormant(0); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground/60 px-2 py-1 border border-border/50"
+              title="0 — nullity, near-silence, maximally reduced signal"
+            >
+              0
+            </button>
+            <button
+              onClick={() => { setSpeed(1); setInputGain(1); setOutputGain(1); setHighpassHz(80); setToneHz(2800); setMix(0); setDistortion(0); setDelayTime(0); setDelayFeedback(0); setModType("off"); setModRate(1); setModDepth(0); setDelayType("mono"); setDelayTimeR(0); setEqLow(0); setEqHigh(0); setVocoderEnabled(false); setVocoderFormant(0); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border/50"
+              title="1 — unity, identity, unaltered signal"
+            >
+              1
+            </button>
+            <button
+              onClick={() => { setSpeed(2); setInputGain(1); setOutputGain(0.85); setHighpassHz(160); setToneHz(5600); setMix(0.20); setDistortion(0); setDelayTime(0.25); setDelayFeedback(0.20); setModType("chorus"); setModRate(2); setModDepth(0.5); setDelayType("stereo"); setDelayTimeR(0); setEqLow(0); setEqHigh(2); setVocoderEnabled(false); setVocoderFormant(0); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border/50"
+              title="2 — duality, octave doubling, the first prime"
+            >
+              2
+            </button>
+            <button
+              onClick={() => { setSpeed(1.5); setInputGain(1); setOutputGain(0.88); setHighpassHz(80); setToneHz(2800); setMix(0.33); setDistortion(3); setDelayTime(0.333); setDelayFeedback(0.33); setModType("ensemble"); setModRate(3); setModDepth(0.33); setDelayType("cross"); setDelayTimeR(0); setEqLow(3); setEqHigh(3); setVocoderEnabled(false); setVocoderFormant(0); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border/50"
+              title="3 — the triad, perfect fifth, three-fold symmetry"
+            >
+              3
+            </button>
+            <button
+              onClick={() => { setSpeed(1); setInputGain(1); setOutputGain(0.87); setHighpassHz(80); setToneHz(3142); setMix(0.314); setDistortion(0); setDelayTime(0.314); setDelayFeedback(0.314); setModType("phaser"); setModRate(3.14); setModDepth(0.618); setDelayType("stereo"); setDelayTimeR(0.159); setEqLow(3); setEqHigh(-1); setVocoderEnabled(false); setVocoderFormant(0); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border/50"
+              title="π — circular motion, phase cycles, orbital modulation"
+            >
+              π
+            </button>
+            <button
+              onClick={() => { setSpeed(0.618); setInputGain(1); setOutputGain(0.854); setHighpassHz(89); setToneHz(2584); setMix(0.382); setDistortion(0); setDelayTime(0.618); setDelayFeedback(0.382); setModType("chorus"); setModRate(1.618); setModDepth(0.382); setDelayType("lr"); setDelayTimeR(0.382); setEqLow(2); setEqHigh(3); setVocoderEnabled(false); setVocoderFormant(0); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border/50"
+              title="φ — golden ratio, self-similar decay, Fibonacci spiral"
+            >
+              φ
+            </button>
+            <button
+              onClick={() => { setSpeed(1.414); setInputGain(1); setOutputGain(0.849); setHighpassHz(113); setToneHz(3960); setMix(0.293); setDistortion(7); setDelayTime(0.141); setDelayFeedback(0.293); setModType("flanger"); setModRate(1.414); setModDepth(0.707); setDelayType("mono"); setDelayTimeR(0); setEqLow(-1); setEqHigh(1); setVocoderEnabled(false); setVocoderFormant(0); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border/50"
+              title="√2 — equal temperament, semitone basis, diagonal of the unit square"
+            >
+              √2
+            </button>
+            <button
+              onClick={() => { setSpeed(0.718); setInputGain(1); setOutputGain(0.88); setHighpassHz(72); setToneHz(2718); setMix(0.368); setDistortion(0); setDelayTime(0.272); setDelayFeedback(0.632); setModType("chorus"); setModRate(0.368); setModDepth(0.632); setDelayType("cross"); setDelayTimeR(0); setEqLow(3); setEqHigh(-2); setVocoderEnabled(false); setVocoderFormant(0); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border/50"
+              title="e — natural growth/decay, organic envelopes, 1/e attenuation"
+            >
+              e
+            </button>
+            <button
+              onClick={() => { setSpeed(1); setInputGain(1); setOutputGain(0.82); setHighpassHz(80); setToneHz(2800); setMix(0.50); setDistortion(0); setDelayTime(0.25); setDelayFeedback(0.25); setModType("phaser"); setModRate(0.25); setModDepth(1); setDelayType("lr"); setDelayTimeR(0.25); setEqLow(0); setEqHigh(0); setVocoderEnabled(false); setVocoderFormant(0); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border/50"
+              title="i — imaginary axis, 90° phase rotation, orthogonal dimension"
+            >
+              i
+            </button>
+            <button
+              onClick={() => { setSpeed(0.97); setInputGain(1.1); setOutputGain(0.83); setHighpassHz(97); setToneHz(2300); setMix(0.47); setDistortion(11); setDelayTime(0.230); setDelayFeedback(0.53); setModType("ensemble"); setModRate(2.3); setModDepth(0.59); setDelayType("lr"); setDelayTimeR(0.370); setEqLow(2); setEqHigh(-3); setVocoderEnabled(true); setVocoderFormant(5); }}
+              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border/50"
+              title="ℙ — prime numbers, irreducible harmonics, indivisible structure"
+            >
+              ℙ
+            </button>
+          </div>
+          <div className="text-[7px] font-mono text-muted-foreground/30 mt-1 tracking-wider italic">
+            0 nullity · 1 identity · 2 octave · 3 triad · π cycle · φ spiral · √2 temperament · e decay · i phase · ℙ primes
           </div>
           <div className="text-[8px] font-mono text-muted-foreground/50 mt-1 tracking-wider">
             signal: input → hpass → comp → eq → mod → tone/crush → delay → vocoder → limiter
