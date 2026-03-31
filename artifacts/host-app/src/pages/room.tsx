@@ -582,6 +582,7 @@ export default function Room() {
     setRecordingSeconds(0);
     setPreviewPlaying(false);
     setPreviewAnalyser(null);
+    setSendMode("raw");
     if (previewBlobUrl) {
       URL.revokeObjectURL(previewBlobUrl);
       setPreviewBlobUrl(null);
