@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CONSTANTS · FX</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&display=swap');
+
+:root {
+–bg: #0a0a0a;
+–surface: #111111;
+–border: #222222;
+–border-active: #444444;
+–text: #c8c8c0;
+–text-dim: #555550;
+–text-bright: #e8e8e0;
+–accent: #c8c8c0;
+–null: #1a1a1a;
+–identity: #f0f0e8;
+–octave: #a0c8a0;
+–triad: #a0b8c8;
+–pi: #c8a8a0;
+–phi: #c8c0a0;
+–sqrt2: #b0a8c8;
+–e: #c8a8b8;
+–i: #a8c0c8;
+–prime: #c0c8a0;
+–knob-size: 52px;
+–track-h: 3px;
+}
+
+- { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+background: var(–bg);
+color: var(–text);
+font-family: ‘DM Mono’, monospace;
+font-size: 11px;
+min-height: 100vh;
+overflow-x: hidden;
+}
+
+/* GRID BACKGROUND - nod to Nic’s work */
+body::before {
+content: ‘’;
+position: fixed;
+inset: 0;
+background-image:
+linear-gradient(rgba(200,200,192,0.03) 1px, transparent 1px),
+linear-gradient(90deg, rgba(200,200,192,0.03) 1px, transparent 1px);
+background-size: 24px 24px;
+pointer-events: none;
+z-index: 0;
+}
+
+.app {
+position: relative;
+z-index: 1;
+max-width: 780px;
+margin: 0 auto;
+padding: 32px 20px;
+}
+
+/* HEADER */
+.header {
+display: flex;
+align-items: baseline;
+justify-content: space-between;
+margin-bottom: 32px;
+border-bottom: 1px solid var(–border);
+padding-bottom: 16px;
+}
+
+.header-title {
+font-family: ‘Cormorant Garamond’, serif;
+font-size: 22px;
+font-weight: 300;
+letter-spacing: 0.15em;
+color: var(–text-bright);
+}
+
+.header-subtitle {
+font-size: 9px;
+color: var(–text-dim);
+letter-spacing: 0.2em;
+text-transform: uppercase;
+}
+
+/* CONSTANT SELECTOR */
+.constants-row {
+display: flex;
+gap: 6px;
+margin-bottom: 28px;
+flex-wrap: wrap;
+}
+
+.const-btn {
+background: var(–surface);
+border: 1px solid var(–border);
+color: var(–text-dim);
+font-family: ‘DM Mono’, monospace;
+font-size: 13px;
+padding: 8px 14px;
+cursor: pointer;
+transition: all 0.15s ease;
+position: relative;
+letter-spacing: 0.05em;
+}
+
+.const-btn:hover {
+border-color: var(–border-active);
+color: var(–text);
+}
+
+.const-btn.active {
+border-color: var(–accent-color, var(–accent));
+color: var(–accent-color, var(–text-bright));
+background: #161616;
+}
+
+.const-btn .const-name {
+display: block;
+font-size: 8px;
+letter-spacing: 0.15em;
+margin-top: 3px;
+opacity: 0.6;
+text-transform: uppercase;
+}
+
+/* ACTIVE CONSTANT INFO */
+.const-info {
+border: 1px solid var(–border);
+background: var(–surface);
+padding: 14px 18px;
+margin-bottom: 24px;
+display: flex;
+align-items: center;
+gap: 24px;
+min-height: 52px;
+transition: border-color 0.3s ease;
+}
+
+.const-info-symbol {
+font-family: ‘Cormorant Garamond’, serif;
+font-size: 28px;
+font-weight: 300;
+color: var(–accent-color, var(–text-bright));
+min-width: 36px;
+text-align: center;
+transition: color 0.3s ease;
+}
+
+.const-info-text {
+flex: 1;
+}
+
+.const-info-name {
+font-size: 10px;
+letter-spacing: 0.2em;
+text-transform: uppercase;
+color: var(–text-bright);
+margin-bottom: 4px;
+}
+
+.const-info-desc {
+font-size: 9px;
+color: var(–text-dim);
+font-style: italic;
+font-family: ‘Cormorant Garamond’, serif;
+letter-spacing: 0.05em;
+}
+
+.const-info-physics {
+font-size: 9px;
+color: var(–text-dim);
+letter-spacing: 0.1em;
+text-align: right;
+}
+
+/* PHYSICS INDICATOR */
+.physics-indicator {
+font-size: 8px;
+color: var(–text-dim);
+letter-spacing: 0.15em;
+text-transform: uppercase;
+margin-bottom: 8px;
+padding-left: 2px;
+}
+
+.physics-indicator span {
+color: var(–accent-color, var(–text-dim));
+transition: color 0.3s ease;
+}
+
+/* SECTIONS */
+.section {
+margin-bottom: 20px;
+}
+
+.section-label {
+font-size: 8px;
+letter-spacing: 0.25em;
+text-transform: uppercase;
+color: var(–text-dim);
+margin-bottom: 12px;
+padding-bottom: 6px;
+border-bottom: 1px solid var(–border);
+}
+
+.controls-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+gap: 16px;
+}
+
+.controls-grid-2 {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+gap: 16px;
+}
+
+/* KNOB CONTROL */
+.control {
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 8px;
+}
+
+.control-label {
+font-size: 8px;
+letter-spacing: 0.2em;
+text-transform: uppercase;
+color: var(–text-dim);
+text-align: center;
+}
+
+.control-value {
+font-size: 10px;
+color: var(–text);
+font-variant-numeric: tabular-nums;
+min-width: 52px;
+text-align: center;
+}
+
+/* KNOB */
+.knob-wrap {
+position: relative;
+width: var(–knob-size);
+height: var(–knob-size);
+cursor: ns-resize;
+user-select: none;
+}
+
+.knob-svg {
+width: 100%;
+height: 100%;
+transform: rotate(-135deg);
+transition: opacity 0.2s;
+}
+
+.knob-track {
+fill: none;
+stroke: var(–border);
+stroke-width: 3;
+stroke-linecap: round;
+}
+
+.knob-fill {
+fill: none;
+stroke: var(–accent-color, #888882);
+stroke-width: 3;
+stroke-linecap: round;
+transition: stroke 0.3s ease, stroke-dashoffset 0.1s ease;
+}
+
+.knob-dot {
+fill: var(–accent-color, #888882);
+transition: fill 0.3s ease;
+}
+
+/* SLIDER */
+.slider-control {
+display: flex;
+flex-direction: column;
+gap: 8px;
+width: 100%;
+}
+
+.slider-header {
+display: flex;
+justify-content: space-between;
+align-items: baseline;
+}
+
+.slider-label {
+font-size: 8px;
+letter-spacing: 0.2em;
+text-transform: uppercase;
+color: var(–text-dim);
+}
+
+.slider-value {
+font-size: 10px;
+color: var(–text);
+font-variant-numeric: tabular-nums;
+}
+
+input[type=range] {
+-webkit-appearance: none;
+width: 100%;
+height: var(–track-h);
+background: var(–border);
+outline: none;
+cursor: ew-resize;
+}
+
+input[type=range]::-webkit-slider-thumb {
+-webkit-appearance: none;
+width: 12px;
+height: 12px;
+background: var(–accent-color, var(–accent));
+border-radius: 0;
+cursor: ew-resize;
+transition: background 0.3s ease;
+}
+
+input[type=range]::-moz-range-thumb {
+width: 12px;
+height: 12px;
+background: var(–accent-color, var(–accent));
+border-radius: 0;
+border: none;
+cursor: ew-resize;
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+background: linear-gradient(
+to right,
+var(–accent-color, var(–border-active)) 0%,
+var(–accent-color, var(–border-active)) var(–fill-pct, 50%),
+var(–border) var(–fill-pct, 50%)
+);
+height: var(–track-h);
+}
+
+/* SELECT BUTTONS */
+.select-group {
+display: flex;
+flex-wrap: wrap;
+gap: 4px;
+}
+
+.select-btn {
+background: var(–surface);
+border: 1px solid var(–border);
+color: var(–text-dim);
+font-family: ‘DM Mono’, monospace;
+font-size: 8px;
+letter-spacing: 0.1em;
+padding: 5px 8px;
+cursor: pointer;
+text-transform: uppercase;
+transition: all 0.15s;
+}
+
+.select-btn:hover { border-color: var(–border-active); color: var(–text); }
+.select-btn.active {
+border-color: var(–accent-color, var(–accent));
+color: var(–accent-color, var(–text-bright));
+background: #161616;
+}
+
+/* DISTANCE METER */
+.distance-bar {
+margin-bottom: 24px;
+padding: 12px 16px;
+border: 1px solid var(–border);
+background: var(–surface);
+}
+
+.distance-label {
+font-size: 8px;
+letter-spacing: 0.2em;
+text-transform: uppercase;
+color: var(–text-dim);
+margin-bottom: 8px;
+}
+
+.distance-track {
+height: 2px;
+background: var(–border);
+position: relative;
+margin-bottom: 6px;
+}
+
+.distance-fill {
+height: 100%;
+background: var(–accent-color, #555);
+transition: width 0.4s ease, background 0.3s ease;
+}
+
+.distance-markers {
+display: flex;
+justify-content: space-between;
+font-size: 8px;
+color: var(–text-dim);
+}
+
+/* AUDIO SECTION */
+.audio-section {
+border: 1px solid var(–border);
+background: var(–surface);
+padding: 16px;
+margin-bottom: 20px;
+}
+
+.audio-controls {
+display: flex;
+align-items: center;
+gap: 12px;
+flex-wrap: wrap;
+}
+
+.btn {
+background: transparent;
+border: 1px solid var(–border);
+color: var(–text);
+font-family: ‘DM Mono’, monospace;
+font-size: 9px;
+letter-spacing: 0.15em;
+text-transform: uppercase;
+padding: 8px 14px;
+cursor: pointer;
+transition: all 0.15s;
+}
+
+.btn:hover { border-color: var(–border-active); }
+.btn.primary {
+border-color: var(–accent-color, var(–accent));
+color: var(–accent-color, var(–text-bright));
+}
+
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.waveform {
+width: 100%;
+height: 48px;
+margin-top: 12px;
+background: var(–bg);
+border: 1px solid var(–border);
+}
+
+/* PRESETS */
+.presets-row {
+display: flex;
+gap: 6px;
+flex-wrap: wrap;
+margin-bottom: 24px;
+}
+
+/* FOOTER */
+.footer {
+margin-top: 32px;
+padding-top: 16px;
+border-top: 1px solid var(–border);
+display: flex;
+justify-content: space-between;
+align-items: center;
+}
+
+.footer-text {
+font-size: 8px;
+color: var(–text-dim);
+letter-spacing: 0.2em;
+font-family: ‘Cormorant Garamond’, serif;
+font-style: italic;
+}
+
+/* TRANSITION FLASH */
+@keyframes flash-border {
+0% { opacity: 1; }
+50% { opacity: 0.3; }
+100% { opacity: 1; }
+}
+
+.const-info.switching {
+animation: flash-border 0.3s ease;
+}
+
+/* MODULATION ACTIVE PULSE */
+@keyframes pulse-dim {
+0%, 100% { opacity: 1; }
+50% { opacity: 0.5; }
+}
+
+.physics-active {
+animation: pulse-dim 2s ease-in-out infinite;
+}
+</style>
+
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div>
+      <div class="header-title">CONSTANTS · FX</div>
+      <div class="header-subtitle">mathematical physics for audio</div>
+    </div>
+    <div style="text-align:right">
+      <div class="header-subtitle" id="physics-mode-label">physics · identity</div>
+      <div class="header-subtitle" style="margin-top:4px; color: #333" id="scale-factor-display">scale · 1.000</div>
+    </div>
+  </div>
+
+  <!-- CONSTANT SELECTOR -->
+
+  <div class="constants-row" id="constants-row"></div>
+
+  <!-- ACTIVE CONSTANT INFO -->
+
+  <div class="const-info" id="const-info">
+    <div class="const-info-symbol" id="info-symbol">1</div>
+    <div class="const-info-text">
+      <div class="const-info-name" id="info-name">Identity</div>
+      <div class="const-info-desc" id="info-desc">Bit-perfect reference. All adjustments are unity.</div>
+    </div>
+    <div class="const-info-physics" id="info-physics">scale · 1.000<br>distance · 0.000</div>
+  </div>
+
+  <!-- PERCEPTUAL DISTANCE FROM IDENTITY -->
+
+  <div class="distance-bar">
+    <div class="distance-label">perceptual distance from identity (1)</div>
+    <div class="distance-track">
+      <div class="distance-fill" id="distance-fill" style="width:0%"></div>
+    </div>
+    <div class="distance-markers">
+      <span>0 · nullity</span>
+      <span id="distance-value">0.000</span>
+      <span>ℙ · prime</span>
+    </div>
+  </div>
+
+  <!-- AUDIO -->
+
+  <div class="audio-section">
+    <div class="section-label">source</div>
+    <div class="audio-controls">
+      <button class="btn" id="btn-record" onclick="toggleRecord()">● record</button>
+      <button class="btn" id="btn-play" onclick="playAudio()" disabled>▶ play raw</button>
+      <button class="btn primary" id="btn-play-fx" onclick="playWithFX()" disabled>▶ play with fx</button>
+      <button class="btn" id="btn-export" onclick="exportAudio()" disabled>↓ export</button>
+      <span style="font-size:9px; color:var(--text-dim); letter-spacing:0.1em" id="rec-status">no recording</span>
+    </div>
+    <canvas class="waveform" id="waveform"></canvas>
+  </div>
+
+  <!-- PHYSICS INDICATOR -->
+
+  <div class="physics-indicator" id="physics-label">
+    adjustments scaled by <span id="physics-span">1.000 (identity)</span>
+  </div>
+
+  <!-- TRANSPORT / GAIN -->
+
+  <div class="section">
+    <div class="section-label">transport · gain</div>
+    <div class="controls-grid">
+      <div class="control">
+        <div class="control-label">speed</div>
+        <div class="knob-wrap" id="knob-speed" data-param="speed" data-min="0.25" data-max="2.0" data-value="1.0" data-format="x"></div>
+        <div class="control-value" id="val-speed">1.00x</div>
+      </div>
+      <div class="control">
+        <div class="control-label">input</div>
+        <div class="knob-wrap" id="knob-input" data-param="input" data-min="0.5" data-max="2.0" data-value="1.0" data-format="gain"></div>
+        <div class="control-value" id="val-input">1.00</div>
+      </div>
+      <div class="control">
+        <div class="control-label">output</div>
+        <div class="knob-wrap" id="knob-output" data-param="output" data-min="0.2" data-max="1.2" data-value="1.0" data-format="gain"></div>
+        <div class="control-value" id="val-output">1.00</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EQ -->
+
+  <div class="section">
+    <div class="section-label">eq</div>
+    <div class="controls-grid">
+      <div class="control">
+        <div class="control-label">hi pass</div>
+        <div class="knob-wrap" id="knob-hpass" data-param="hpass" data-min="40" data-max="180" data-value="40" data-format="hz"></div>
+        <div class="control-value" id="val-hpass">40Hz</div>
+      </div>
+      <div class="control">
+        <div class="control-label">tone</div>
+        <div class="knob-wrap" id="knob-tone" data-param="tone" data-min="-12" data-max="12" data-value="0" data-format="db"></div>
+        <div class="control-value" id="val-tone">0.0dB</div>
+      </div>
+      <div class="control">
+        <div class="control-label">lo shelf</div>
+        <div class="knob-wrap" id="knob-loshelf" data-param="loshelf" data-min="-12" data-max="12" data-value="0" data-format="db"></div>
+        <div class="control-value" id="val-loshelf">0.0dB</div>
+      </div>
+      <div class="control">
+        <div class="control-label">hi shelf</div>
+        <div class="knob-wrap" id="knob-hishelf" data-param="hishelf" data-min="-12" data-max="12" data-value="0" data-format="db"></div>
+        <div class="control-value" id="val-hishelf">0.0dB</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODULATION -->
+
+  <div class="section">
+    <div class="section-label">modulation</div>
+    <div class="controls-grid-2" style="margin-bottom:14px">
+      <div class="control">
+        <div class="control-label">mix</div>
+        <div class="knob-wrap" id="knob-mix" data-param="mix" data-min="0" data-max="1" data-value="0" data-format="pct"></div>
+        <div class="control-value" id="val-mix">0%</div>
+      </div>
+      <div class="control">
+        <div class="control-label">crush</div>
+        <div class="knob-wrap" id="knob-crush" data-param="crush" data-min="0" data-max="1" data-value="0.28" data-format="pct"></div>
+        <div class="control-value" id="val-crush">28%</div>
+      </div>
+    </div>
+    <div class="slider-control" style="margin-bottom:10px">
+      <div class="slider-header">
+        <span class="slider-label">delay</span>
+        <span class="slider-value" id="val-delay">0.00s</span>
+      </div>
+      <input type="range" id="slider-delay" min="0" max="2" step="0.01" value="0" oninput="onSlider('delay', this)">
+    </div>
+    <div class="slider-control" style="margin-bottom:14px">
+      <div class="slider-header">
+        <span class="slider-label">feedback</span>
+        <span class="slider-value" id="val-feedback">0%</span>
+      </div>
+      <input type="range" id="slider-feedback" min="0" max="1" step="0.01" value="0" oninput="onSlider('feedback', this)">
+    </div>
+    <div class="select-group" id="mod-select">
+      <button class="select-btn active" data-mod="off" onclick="setMod('off', this)">off</button>
+      <button class="select-btn" data-mod="chorus" onclick="setMod('chorus', this)">chorus</button>
+      <button class="select-btn" data-mod="flanger" onclick="setMod('flanger', this)">flanger</button>
+      <button class="select-btn" data-mod="ensemble" onclick="setMod('ensemble', this)">ensemble</button>
+      <button class="select-btn" data-mod="phaser" onclick="setMod('phaser', this)">phaser</button>
+      <button class="select-btn" data-mod="amp" onclick="setMod('amp', this)">amp</button>
+    </div>
+  </div>
+
+  <!-- DELAY MODE -->
+
+  <div class="section">
+    <div class="section-label">delay mode</div>
+    <div class="select-group" id="delay-select">
+      <button class="select-btn active" data-delay="mono" onclick="setDelay('mono', this)">mono</button>
+      <button class="select-btn" data-delay="stereo" onclick="setDelay('stereo', this)">stereo</button>
+      <button class="select-btn" data-delay="cross" onclick="setDelay('cross', this)">cross</button>
+      <button class="select-btn" data-delay="lr" onclick="setDelay('lr', this)">l/r</button>
+    </div>
+  </div>
+
+  <!-- VOCODER -->
+
+  <div class="section">
+    <div class="section-label">vocoder</div>
+    <div class="select-group" id="vocoder-select">
+      <button class="select-btn active" data-voc="off" onclick="setVocoder('off', this)">off</button>
+      <button class="select-btn" data-voc="8band" onclick="setVocoder('8band', this)">8-band · sawtooth</button>
+    </div>
+  </div>
+
+  <!-- PRESETS -->
+
+  <div class="section">
+    <div class="section-label">presets</div>
+    <div class="presets-row" id="presets-row"></div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-text">each adjustment scaled by the active constant's physics</div>
+    <div class="footer-text" id="footer-const">1 · identity · scale 1.000</div>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// CONSTANTS DEFINITION
+// ============================================================
+const MATH_CONSTANTS = {
+  '0':    { value: 0,              name: 'Nullity',     label: '0',   concept: 'silence',      color: '#444440', desc: 'Pure silence. The null state. No physics applied.' },
+  '1':    { value: 1,              name: 'Identity',    label: '1',   concept: 'identity',     color: '#d0d0c8', desc: 'Bit-perfect reference. All adjustments are unity.' },
+  '2':    { value: 2,              name: 'Octave',      label: '2',   concept: 'octave',       color: '#90c890', desc: 'Doubling. Every parameter scaled by powers of two.' },
+  '3':    { value: 3,              name: 'Triad',       label: '3',   concept: 'triad',        color: '#90b0c0', desc: 'Harmonic thirds. The root of chord structure.' },
+  'π':    { value: Math.PI,        name: 'Cycle',       label: 'π',   concept: 'cycle',        color: '#c0a098', desc: 'Circular motion. Parameters oscillate on π-derived curves.' },
+  'φ':    { value: 1.6180339887,   name: 'Spiral',      label: 'φ',   concept: 'spiral',       color: '#c0b898', desc: 'Golden ratio. Every adjustment scaled toward φ-proportion.' },
+  '√2':   { value: Math.SQRT2,     name: 'Temperament', label: '√2',  concept: 'temperament',  color: '#a8a0c0', desc: 'Equal temperament. The irrational at the heart of Western tuning.' },
+  'e':    { value: Math.E,         name: 'Decay',       label: 'e',   concept: 'decay',        color: '#c0a0b0', desc: 'Natural exponential. Parameters follow e-curve decay.' },
+  'i':    { value: null,           name: 'Phase',       label: 'i',   concept: 'phase',        color: '#98b8c0', desc: 'Imaginary unit. Phase rotation exists in a perpendicular dimension.' },
+  'ℙ':    { value: null,           name: 'Primes',      label: 'ℙ',   concept: 'primes',       color: '#b0c098', desc: 'Prime number sequence. Parameters step through irregular but patterned intervals.' },
+};
+
+const PRIMES = [2,3,5,7,11,13,17,19,23,29,31,37,41,43,47];
+
+// ============================================================
+// PRESETS — all defined relative to IDENTITY (1)
+// Identity = every param at its neutral/unity value
+// Each preset stores delta from identity
+// ============================================================
+const IDENTITY_STATE = {
+  speed: 1.0, input: 1.0, output: 1.0,
+  hpass: 40, tone: 0, loshelf: 0, hishelf: 0,
+  mix: 0, crush: 0.28, delay: 0, feedback: 0,
+  mod: 'off', delayMode: 'mono', vocoder: 'off'
+};
+
+const PRESETS = {
+  'CLEAN':     { speed:1.0, input:1.0, output:1.0, hpass:40, tone:0, loshelf:0, hishelf:0, mix:0, crush:0, delay:0, feedback:0, mod:'off', delayMode:'mono', vocoder:'off' },
+  'HAUNTED':   { speed:0.85, input:1.2, output:0.8, hpass:80, tone:-3, loshelf:4, hishelf:-2, mix:0.4, crush:0.3, delay:0.4, feedback:0.5, mod:'chorus', delayMode:'cross', vocoder:'off' },
+  'CRUSHED':   { speed:1.0, input:1.5, output:0.7, hpass:60, tone:2, loshelf:-2, hishelf:3, mix:0.6, crush:0.8, delay:0.1, feedback:0.2, mod:'amp', delayMode:'mono', vocoder:'off' },
+  'SUBMERGED': { speed:0.7, input:0.8, output:0.9, hpass:40, tone:-6, loshelf:6, hishelf:-4, mix:0.7, crush:0.1, delay:0.6, feedback:0.65, mod:'flanger', delayMode:'stereo', vocoder:'off' },
+  'VOID':      { speed:0.5, input:0.6, output:0.5, hpass:120, tone:-8, loshelf:-2, hishelf:-6, mix:0.9, crush:0.05, delay:1.2, feedback:0.8, mod:'phaser', delayMode:'cross', vocoder:'off' },
+  'NERVE':     { speed:1.8, input:1.8, output:0.9, hpass:100, tone:6, loshelf:-4, hishelf:5, mix:0.3, crush:0.7, delay:0.05, feedback:0.1, mod:'amp', delayMode:'mono', vocoder:'off' },
+  'ROBOT':     { speed:1.0, input:1.0, output:0.9, hpass:40, tone:0, loshelf:0, hishelf:0, mix:0.5, crush:0.4, delay:0, feedback:0, mod:'off', delayMode:'mono', vocoder:'8band' },
+  'CATHEDRAL': { speed:0.9, input:0.9, output:0.85, hpass:40, tone:-1, loshelf:2, hishelf:1, mix:0.8, crush:0.05, delay:0.9, feedback:0.7, mod:'ensemble', delayMode:'stereo', vocoder:'off' },
+};
+
+// ============================================================
+// CONSTANT PHYSICS ENGINE
+// How each constant *scales* manual adjustments
+// ============================================================
+function getPhysicsScale(constKey, param, rawDelta) {
+  // rawDelta = how much user moved param from identity baseline
+  switch(constKey) {
+    case '0': return 0; // nullity — no adjustments
+    case '1': return rawDelta * 1.0; // identity — unity
+    case '2': return rawDelta * 2.0; // octave — double
+    case '3': return rawDelta * 1.5; // triad — 3/2
+    case 'π': return rawDelta * (Math.PI / 3); // cycle scaling ~1.047
+    case 'φ': return rawDelta * 1.6180339887; // golden ratio
+    case '√2': return rawDelta * Math.SQRT2; // ~1.414
+    case 'e':  return rawDelta * (Math.E / 2); // ~1.359
+    case 'i':  return rawDelta * -1; // phase inversion — perpendicular
+    case 'ℙ':  {
+      // prime step: which prime index based on param order
+      const paramOrder = ['speed','input','output','hpass','tone','loshelf','hishelf','mix','crush','delay','feedback'];
+      const idx = paramOrder.indexOf(param) % PRIMES.length;
+      return rawDelta * (PRIMES[idx] / 10);
+    }
+    default: return rawDelta;
+  }
+}
+
+// Perceptual distance of a constant from identity (0=identity, 1=max)
+function getConstantDistance(constKey) {
+  const distances = { '0':0.0, '1':0.0, '2':0.35, '3':0.25, 'π':0.45, 'φ':0.38, '√2':0.28, 'e':0.30, 'i':0.55, 'ℙ':0.75 };
+  return distances[constKey] || 0;
+}
+
+// ============================================================
+// STATE
+// ============================================================
+let activeConst = '1';
+let currentParams = { ...IDENTITY_STATE };
+let audioCtx = null;
+let sourceBuffer = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let isRecording = false;
+let currentSource = null;
+let primeIndex = 0;
+
+// ============================================================
+// RENDER CONSTANTS BUTTONS
+// ============================================================
+function renderConstants() {
+  const row = document.getElementById('constants-row');
+  row.innerHTML = '';
+  Object.entries(MATH_CONSTANTS).forEach(([key, c]) => {
+    const btn = document.createElement('button');
+    btn.className = 'const-btn' + (key === activeConst ? ' active' : '');
+    btn.style.setProperty('--accent-color', c.color);
+    btn.innerHTML = `<span style="font-family:'Cormorant Garamond',serif;font-size:18px;font-weight:300">${c.label}</span><span class="const-name">${c.concept}</span>`;
+    btn.onclick = () => selectConstant(key);
+    row.appendChild(btn);
+  });
+}
+
+function renderPresets() {
+  const row = document.getElementById('presets-row');
+  row.innerHTML = '';
+  Object.keys(PRESETS).forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'select-btn';
+    btn.textContent = name;
+    btn.onclick = () => applyPreset(name, btn);
+    row.appendChild(btn);
+  });
+}
+
+// ============================================================
+// SELECT CONSTANT
+// ============================================================
+function selectConstant(key) {
+  activeConst = key;
+  const c = MATH_CONSTANTS[key];
+
+  // Update CSS accent color globally
+  document.documentElement.style.setProperty('--accent-color', c.color);
+
+  // Update buttons
+  document.querySelectorAll('.const-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.const-btn')[Object.keys(MATH_CONSTANTS).indexOf(key)].classList.add('active');
+
+  // Update info panel
+  const info = document.getElementById('const-info');
+  info.classList.add('switching');
+  setTimeout(() => info.classList.remove('switching'), 300);
+
+  document.getElementById('info-symbol').textContent = c.label;
+  document.getElementById('info-symbol').style.color = c.color;
+  document.getElementById('info-name').textContent = c.name.toUpperCase();
+  document.getElementById('info-desc').textContent = c.desc;
+
+  const dist = getConstantDistance(key);
+  const scaleVal = c.value !== null ? c.value.toFixed(3) : '—';
+  document.getElementById('info-physics').textContent = `scale · ${scaleVal}\ndistance · ${dist.toFixed(3)}`;
+
+  // Physics label
+  document.getElementById('physics-span').textContent = `${c.value !== null ? c.value.toFixed(4) : '—'} (${c.concept})`;
+  document.getElementById('physics-mode-label').textContent = `physics · ${c.concept}`;
+
+  const scaleFactor = c.value !== null ? c.value.toFixed(3) : '—';
+  document.getElementById('scale-factor-display').textContent = `scale · ${scaleFactor}`;
+  document.getElementById('footer-const').textContent = `${c.label} · ${c.concept} · scale ${scaleFactor}`;
+
+  // Distance bar
+  document.getElementById('distance-fill').style.width = (dist * 100) + '%';
+  document.getElementById('distance-fill').style.background = c.color;
+  document.getElementById('distance-value').textContent = dist.toFixed(3);
+
+  // Apply constant's base preset to FX panel
+  applyConstantBase(key);
+
+  // Update slider tracks
+  updateAllSliderFills();
+}
+
+// ============================================================
+// CONSTANT BASE CONFIGURATIONS
+// Each constant locks a starting configuration
+// These are defined as distances FROM identity
+// ============================================================
+function applyConstantBase(key) {
+  let target = { ...IDENTITY_STATE };
+
+  switch(key) {
+    case '0': // nullity
+      target = { ...IDENTITY_STATE, output: 0.2, mix: 0, crush: 0 };
+      break;
+    case '1': // identity — pure reference
+      target = { ...IDENTITY_STATE };
+      break;
+    case '2': // octave — doubled energy
+      target = { ...IDENTITY_STATE, input: 1.4, output: 1.0, tone: 3, loshelf: 2, hishelf: 2 };
+      break;
+    case '3': // triad — harmonic richness
+      target = { ...IDENTITY_STATE, loshelf: 2, hishelf: 1, mix: 0.2, mod: 'chorus' };
+      break;
+    case 'π': // cycle — rotating, phasing
+      target = { ...IDENTITY_STATE, mix: 0.5, delay: 0.314, feedback: 0.31, mod: 'phaser' };
+      break;
+    case 'φ': // spiral — golden proportions
+      target = { ...IDENTITY_STATE, input: 1.0, loshelf: 1.6, hishelf: 1.0, mix: 0.38, delay: 0.618, feedback: 0.38 };
+      break;
+    case '√2': // temperament — equal division
+      target = { ...IDENTITY_STATE, hpass: 80, tone: 1.4, mix: 0.3, delay: 0.14 };
+      break;
+    case 'e': // decay — exponential tail
+      target = { ...IDENTITY_STATE, delay: 0.5, feedback: 0.63, mix: 0.4, loshelf: 2 };
+      break;
+    case 'i': // phase — inverted/shifted
+      target = { ...IDENTITY_STATE, mix: 0.7, mod: 'flanger', delay: 0.1, feedback: 0.5, hishelf: -3 };
+      break;
+    case 'ℙ': // primes — irregular steps
+      const p = PRIMES[primeIndex % PRIMES.length];
+      primeIndex++;
+      target = { ...IDENTITY_STATE, hpass: 40 + p, tone: (p % 5) - 2, mix: p / 47, delay: p / 100, feedback: p / 60 };
+      break;
+  }
+
+  currentParams = { ...target };
+  renderAllControls();
+}
+
+// ============================================================
+// APPLY PRESET
+// ============================================================
+function applyPreset(name, btn) {
+  document.querySelectorAll('#presets-row .select-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentParams = { ...PRESETS[name] };
+  renderAllControls();
+  updateAllSliderFills();
+}
+
+// ============================================================
+// RENDER ALL CONTROLS FROM currentParams
+// ============================================================
+function renderAllControls() {
+  setKnobValue('knob-speed', currentParams.speed);
+  setKnobValue('knob-input', currentParams.input);
+  setKnobValue('knob-output', currentParams.output);
+  setKnobValue('knob-hpass', currentParams.hpass);
+  setKnobValue('knob-tone', currentParams.tone);
+  setKnobValue('knob-loshelf', currentParams.loshelf);
+  setKnobValue('knob-hishelf', currentParams.hishelf);
+  setKnobValue('knob-mix', currentParams.mix);
+  setKnobValue('knob-crush', currentParams.crush);
+
+  document.getElementById('slider-delay').value = currentParams.delay;
+  document.getElementById('slider-feedback').value = currentParams.feedback;
+  updateSliderDisplay('delay', currentParams.delay);
+  updateSliderDisplay('feedback', currentParams.feedback);
+
+  // Mod buttons
+  document.querySelectorAll('#mod-select .select-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mod === currentParams.mod);
+  });
+  document.querySelectorAll('#delay-select .select-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.delay === currentParams.delayMode);
+  });
+  document.querySelectorAll('#vocoder-select .select-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.voc === currentParams.vocoder);
+  });
+}
+
+// ============================================================
+// KNOB RENDERING
+// ============================================================
+const CIRCUMFERENCE = 2 * Math.PI * 20 * (270/360);
+
+function buildKnob(wrap) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 52 52');
+  svg.classList.add('knob-svg');
+
+  const cx = 26, cy = 26, r = 20;
+  const trackStart = 0;
+  const trackEnd = 2 * Math.PI * r * (270/360);
+
+  const track = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  track.setAttribute('cx', cx); track.setAttribute('cy', cy); track.setAttribute('r', r);
+  track.classList.add('knob-track');
+  track.style.strokeDasharray = `${trackEnd} ${2 * Math.PI * r}`;
+  track.style.strokeDashoffset = 0;
+
+  const fill = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  fill.setAttribute('cx', cx); fill.setAttribute('cy', cy); fill.setAttribute('r', r);
+  fill.classList.add('knob-fill');
+  fill.style.strokeDasharray = `${trackEnd} ${2 * Math.PI * r}`;
+  fill.style.strokeDashoffset = trackEnd; // empty
+
+  const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  dot.setAttribute('cx', cx); dot.setAttribute('cy', cy + r - 5);
+  dot.setAttribute('r', 2.5);
+  dot.classList.add('knob-dot');
+
+  svg.appendChild(track);
+  svg.appendChild(fill);
+  svg.appendChild(dot);
+  wrap.appendChild(svg);
+  wrap._fill = fill;
+  wrap._dot = dot;
+  wrap._svg = svg;
+
+  // Mouse/touch drag
+  let startY, startVal;
+  const onDown = (e) => {
+    e.preventDefault();
+    startY = e.touches ? e.touches[0].clientY : e.clientY;
+    startVal = parseFloat(wrap.dataset.value);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('touchmove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchend', onUp);
+  };
+  const onMove = (e) => {
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const dy = startY - y;
+    const min = parseFloat(wrap.dataset.min);
+    const max = parseFloat(wrap.dataset.max);
+    const range = max - min;
+    const rawDelta = dy / 150 * range;
+
+    // PHYSICS: scale delta by active constant
+    const param = wrap.dataset.param;
+    const scaledDelta = getPhysicsScale(activeConst, param, rawDelta);
+
+    let newVal = Math.min(max, Math.max(min, startVal + scaledDelta));
+    wrap.dataset.value = newVal;
+    currentParams[param] = newVal;
+    updateKnobVisual(wrap, newVal);
+    updateValueDisplay(param, newVal, wrap.dataset.format);
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('touchend', onUp);
+  };
+  wrap.addEventListener('mousedown', onDown);
+  wrap.addEventListener('touchstart', onDown);
+}
+
+function setKnobValue(id, value) {
+  const wrap = document.getElementById(id);
+  if (!wrap) return;
+  const min = parseFloat(wrap.dataset.min);
+  const max = parseFloat(wrap.dataset.max);
+  const clamp = Math.min(max, Math.max(min, value));
+  wrap.dataset.value = clamp;
+  currentParams[wrap.dataset.param] = clamp;
+  updateKnobVisual(wrap, clamp);
+  updateValueDisplay(wrap.dataset.param, clamp, wrap.dataset.format);
+}
+
+function updateKnobVisual(wrap, value) {
+  if (!wrap._fill) return;
+  const min = parseFloat(wrap.dataset.min);
+  const max = parseFloat(wrap.dataset.max);
+  const pct = (value - min) / (max - min);
+  const totalArc = 2 * Math.PI * 20 * (270/360);
+  const filled = pct * totalArc;
+  wrap._fill.style.strokeDashoffset = totalArc - filled;
+
+  // Rotate dot
+  const angle = -135 + pct * 270;
+  const rad = (angle + 135) * Math.PI / 180;
+  const cx = 26, cy = 26, r = 20 - 5;
+  const dx = cx + r * Math.sin(rad);
+  const dy = cy - r * Math.cos(rad);
+  wrap._dot.setAttribute('cx', dx);
+  wrap._dot.setAttribute('cy', dy);
+}
+
+function updateValueDisplay(param, value, fmt) {
+  const el = document.getElementById('val-' + param);
+  if (!el) return;
+  if (fmt === 'x') el.textContent = value.toFixed(2) + 'x';
+  else if (fmt === 'gain') el.textContent = value.toFixed(2);
+  else if (fmt === 'hz') el.textContent = Math.round(value) + 'Hz';
+  else if (fmt === 'db') el.textContent = (value >= 0 ? '+' : '') + value.toFixed(1) + 'dB';
+  else if (fmt === 'pct') el.textContent = Math.round(value * 100) + '%';
+  else el.textContent = value.toFixed(2);
+}
+
+// ============================================================
+// SLIDERS
+// ============================================================
+function onSlider(param, input) {
+  const rawVal = parseFloat(input.value);
+  const min = parseFloat(input.min);
+  const max = parseFloat(input.max);
+
+  // Physics scaling on delta from identity baseline
+  const baseVal = IDENTITY_STATE[param] || 0;
+  const rawDelta = rawVal - baseVal;
+  const scaledDelta = getPhysicsScale(activeConst, param, rawDelta);
+  let newVal = Math.min(max, Math.max(min, baseVal + scaledDelta));
+
+  // If identity or nullity, just use raw
+  if (activeConst === '1' || activeConst === '0') newVal = rawVal;
+
+  currentParams[param] = newVal;
+  updateSliderDisplay(param, newVal);
+  updateSliderFill(input, min, max, newVal);
+}
+
+function updateSliderDisplay(param, value) {
+  const el = document.getElementById('val-' + param);
+  if (!el) return;
+  if (param === 'delay') el.textContent = value.toFixed(2) + 's';
+  if (param === 'feedback') el.textContent = Math.round(value * 100) + '%';
+}
+
+function updateSliderFill(input, min, max, value) {
+  const pct = ((value - min) / (max - min)) * 100;
+  input.style.setProperty('--fill-pct', pct + '%');
+}
+
+function updateAllSliderFills() {
+  const delay = document.getElementById('slider-delay');
+  updateSliderFill(delay, 0, 2, currentParams.delay);
+  const fb = document.getElementById('slider-feedback');
+  updateSliderFill(fb, 0, 1, currentParams.feedback);
+}
+
+// ============================================================
+// SELECT GROUPS
+// ============================================================
+function setMod(val, btn) {
+  document.querySelectorAll('#mod-select .select-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentParams.mod = val;
+}
+function setDelay(val, btn) {
+  document.querySelectorAll('#delay-select .select-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentParams.delayMode = val;
+}
+function setVocoder(val, btn) {
+  document.querySelectorAll('#vocoder-select .select-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentParams.vocoder = val;
+}
+
+// ============================================================
+// AUDIO ENGINE
+// ============================================================
+async function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+async function toggleRecord() {
+  await initAudio();
+  if (isRecording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
+}
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordedChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = processRecording;
+    mediaRecorder.start();
+    isRecording = true;
+    document.getElementById('btn-record').textContent = '■ stop';
+    document.getElementById('rec-status').textContent = '● recording...';
+  } catch(e) {
+    document.getElementById('rec-status').textContent = 'mic access denied';
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder) mediaRecorder.stop();
+  isRecording = false;
+  document.getElementById('btn-record').textContent = '● record';
+  document.getElementById('rec-status').textContent = 'processing...';
+}
+
+async function processRecording() {
+  const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+  const arrayBuffer = await blob.arrayBuffer();
+  sourceBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  drawWaveform(sourceBuffer);
+  document.getElementById('rec-status').textContent = `${sourceBuffer.duration.toFixed(1)}s recorded`;
+  document.getElementById('btn-play').disabled = false;
+  document.getElementById('btn-play-fx').disabled = false;
+  document.getElementById('btn-export').disabled = false;
+}
+
+function playAudio() {
+  if (!sourceBuffer || !audioCtx) return;
+  if (currentSource) { currentSource.stop(); currentSource = null; }
+  const src = audioCtx.createBufferSource();
+  src.buffer = sourceBuffer;
+  src.connect(audioCtx.destination);
+  src.start();
+  currentSource = src;
+}
+
+function playWithFX() {
+  if (!sourceBuffer || !audioCtx) return;
+  if (currentSource) { currentSource.stop(); currentSource = null; }
+
+  // Build FX chain from currentParams
+  const src = audioCtx.createBufferSource();
+  src.buffer = sourceBuffer;
+  src.playbackRate.value = currentParams.speed;
+
+  const inputGain = audioCtx.createGain();
+  inputGain.gain.value = currentParams.input;
+
+  const outputGain = audioCtx.createGain();
+  outputGain.gain.value = currentParams.output;
+
+  const hpFilter = audioCtx.createBiquadFilter();
+  hpFilter.type = 'highpass';
+  hpFilter.frequency.value = currentParams.hpass;
+
+  const toneFilter = audioCtx.createBiquadFilter();
+  toneFilter.type = 'peaking';
+  toneFilter.frequency.value = 1000;
+  toneFilter.gain.value = currentParams.tone;
+
+  const loShelf = audioCtx.createBiquadFilter();
+  loShelf.type = 'lowshelf';
+  loShelf.frequency.value = 200;
+  loShelf.gain.value = currentParams.loshelf;
+
+  const hiShelf = audioCtx.createBiquadFilter();
+  hiShelf.type = 'highshelf';
+  hiShelf.frequency.value = 8000;
+  hiShelf.gain.value = currentParams.hishelf;
+
+  // Delay
+  const delay = audioCtx.createDelay(2.0);
+  delay.delayTime.value = currentParams.delay;
+  const feedback = audioCtx.createGain();
+  feedback.gain.value = currentParams.feedback;
+  const dryGain = audioCtx.createGain();
+  dryGain.gain.value = 1 - currentParams.mix;
+  const wetGain = audioCtx.createGain();
+  wetGain.gain.value = currentParams.mix;
+
+  // Bitcrusher approximation via waveshaper
+  const crusher = audioCtx.createWaveShaper();
+  if (currentParams.crush > 0.01) {
+    const bits = Math.max(1, Math.round((1 - currentParams.crush) * 16));
+    const samples = 256;
+    const curve = new Float32Array(samples);
+    const step = Math.pow(2, bits);
+    for (let i = 0; i < samples; i++) {
+      const x = (i / samples) * 2 - 1;
+      curve[i] = Math.round(x * step) / step;
+    }
+    crusher.curve = curve;
+  }
+
+  // Chain: src → inputGain → hpFilter → toneFilter → loShelf → hiShelf → crusher → dryGain → outputGain → dest
+  src.connect(inputGain);
+  inputGain.connect(hpFilter);
+  hpFilter.connect(toneFilter);
+  toneFilter.connect(loShelf);
+  loShelf.connect(hiShelf);
+  hiShelf.connect(crusher);
+  crusher.connect(dryGain);
+  dryGain.connect(outputGain);
+
+  // Delay loop
+  crusher.connect(wetGain);
+  wetGain.connect(delay);
+  delay.connect(feedback);
+  feedback.connect(delay);
+  delay.connect(outputGain);
+
+  outputGain.connect(audioCtx.destination);
+  src.start();
+  currentSource = src;
+}
+
+async function exportAudio() {
+  if (!sourceBuffer) return;
+  // Render offline
+  const offCtx = new OfflineAudioContext(sourceBuffer.numberOfChannels, sourceBuffer.length, sourceBuffer.sampleRate);
+  const src = offCtx.createBufferSource();
+  src.buffer = sourceBuffer;
+  src.playbackRate.value = currentParams.speed;
+
+  const inputGain = offCtx.createGain();
+  inputGain.gain.value = currentParams.input;
+  const outputGain = offCtx.createGain();
+  outputGain.gain.value = currentParams.output;
+  const hpFilter = offCtx.createBiquadFilter();
+  hpFilter.type = 'highpass';
+  hpFilter.frequency.value = currentParams.hpass;
+  const toneFilter = offCtx.createBiquadFilter();
+  toneFilter.type = 'peaking';
+  toneFilter.frequency.value = 1000;
+  toneFilter.gain.value = currentParams.tone;
+  const loShelf = offCtx.createBiquadFilter();
+  loShelf.type = 'lowshelf';
+  loShelf.frequency.value = 200;
+  loShelf.gain.value = currentParams.loshelf;
+  const hiShelf = offCtx.createBiquadFilter();
+  hiShelf.type = 'highshelf';
+  hiShelf.frequency.value = 8000;
+  hiShelf.gain.value = currentParams.hishelf;
+
+  src.connect(inputGain);
+  inputGain.connect(hpFilter);
+  hpFilter.connect(toneFilter);
+  toneFilter.connect(loShelf);
+  loShelf.connect(hiShelf);
+  hiShelf.connect(outputGain);
+  outputGain.connect(offCtx.destination);
+  src.start();
+
+  const rendered = await offCtx.startRendering();
+  const wav = bufferToWav(rendered);
+  const blob = new Blob([wav], { type: 'audio/wav' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `constants-fx-${activeConst.replace('ℙ','prime')}-${Date.now()}.wav`;
+  a.click();
+}
+
+function bufferToWav(buffer) {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1;
+  const bitDepth = 16;
+  const blockAlign = numChannels * bitDepth / 8;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = buffer.length * blockAlign;
+  const headerSize = 44;
+  const arrayBuffer = new ArrayBuffer(headerSize + dataSize);
+  const view = new DataView(arrayBuffer);
+
+  const writeString = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let i = 0; i < buffer.length; i++) {
+    for (let ch = 0; ch < numChannels; ch++) {
+      const sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+      offset += 2;
+    }
+  }
+  return arrayBuffer;
+}
+
+// ============================================================
+// WAVEFORM DISPLAY
+// ============================================================
+function drawWaveform(buffer) {
+  const canvas = document.getElementById('waveform');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, w, h);
+
+  const data = buffer.getChannelData(0);
+  const step = Math.ceil(data.length / w);
+  const accentColor = MATH_CONSTANTS[activeConst].color;
+
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+
+  for (let x = 0; x < w; x++) {
+    let min = 1, max = -1;
+    for (let j = 0; j < step; j++) {
+      const d = data[(x * step) + j] || 0;
+      if (d < min) min = d;
+      if (d > max) max = d;
+    }
+    ctx.moveTo(x, (1 + min) / 2 * h);
+    ctx.lineTo(x, (1 + max) / 2 * h);
+  }
+  ctx.stroke();
+}
+
+// ============================================================
+// INIT
+// ============================================================
+function init() {
+  // Build knobs
+  document.querySelectorAll('.knob-wrap').forEach(buildKnob);
+  renderConstants();
+  renderPresets();
+  selectConstant('1');
+}
+
+init();
+</script>
+
+</body>
+</html>

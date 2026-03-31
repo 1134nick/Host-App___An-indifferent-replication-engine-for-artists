@@ -12,6 +12,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Mic, MicOff, X, Send, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Radio, Zap } from "lucide-react";
 import { fetchAndDecode, createEchoNode, getAudioContext, renderWithFx, type EchoNode, type FxOptions, type ModType, type DelayType } from "../lib/audio-engine";
+import { MATH_CONSTANTS, CONSTANT_KEYS, getConstantBase, getPerceptualDistance, scaleParam, type ConstantKey, IDENTITY_FX } from "../lib/constants-physics";
 import Waveform from "../components/waveform";
 import AmbientDrone from "../components/ambient-drone";
 
@@ -423,27 +424,56 @@ export default function Room() {
   const [vocoderEnabled, setVocoderEnabled] = useState(false);
   const [vocoderFormant, setVocoderFormant] = useState(0);
   const [sendMode, setSendMode] = useState<"raw" | "baked">("raw");
+  const [activeConstant, setActiveConstant] = useState<ConstantKey | null>(null);
+
+  const applyConstant = useCallback((key: ConstantKey) => {
+    setActiveConstant(key);
+    const base = getConstantBase(key);
+    setSpeed(base.speed);
+    setDistortion(base.distortion);
+    setDelayTime(base.delayTime);
+    setDelayFeedback(base.delayFeedback);
+    setInputGain(base.inputGain);
+    setOutputGain(base.outputGain);
+    setMix(base.mix);
+    setToneHz(base.toneHz);
+    setHighpassHz(base.highpassHz);
+    setModType(base.modType as ModType);
+    setModRate(base.modRate);
+    setModDepth(base.modDepth);
+    setDelayType(base.delayType as DelayType);
+    setDelayTimeR(base.delayTimeR);
+    setEqLow(base.eqLow);
+    setEqHigh(base.eqHigh);
+    setVocoderEnabled(base.vocoderEnabled);
+    setVocoderFormant(base.vocoderFormant);
+  }, []);
+
+  const ps = useCallback((param: string, raw: number, identity: number, min: number, max: number): number => {
+    if (!activeConstant || activeConstant === "1") return raw;
+    return scaleParam(activeConstant, param, raw, identity, min, max);
+  }, [activeConstant]);
 
   const fxOptions: FxOptions = useMemo(() => ({
-    playbackRate: speed,
-    distortionAmount: distortion,
-    delayTime,
-    delayFeedback,
-    inputGain,
-    outputGain,
-    mix,
-    toneHz,
-    highpassHz,
+    playbackRate: ps("speed", speed, IDENTITY_FX.speed, 0.25, 2),
+    distortionAmount: ps("distortion", distortion, IDENTITY_FX.distortion, 0, 100),
+    delayTime: ps("delayTime", delayTime, IDENTITY_FX.delayTime, 0, 1.2),
+    delayFeedback: ps("delayFeedback", delayFeedback, IDENTITY_FX.delayFeedback, 0, 0.75),
+    inputGain: ps("inputGain", inputGain, IDENTITY_FX.inputGain, 0.5, 2),
+    outputGain: ps("outputGain", outputGain, IDENTITY_FX.outputGain, 0.2, 1.2),
+    mix: ps("mix", mix, IDENTITY_FX.mix, 0, 1),
+    toneHz: ps("toneHz", toneHz, IDENTITY_FX.toneHz, 500, 8000),
+    highpassHz: ps("highpassHz", highpassHz, IDENTITY_FX.highpassHz, 40, 180),
     modType,
-    modRate,
-    modDepth,
+    modRate: ps("modRate", modRate, IDENTITY_FX.modRate, 0.1, 8),
+    modDepth: ps("modDepth", modDepth, IDENTITY_FX.modDepth, 0, 1),
     delayType,
-    delayTimeR,
-    eqLow,
-    eqHigh,
+    delayTimeR: ps("delayTimeR", delayTimeR, IDENTITY_FX.delayTimeR, 0, 1.2),
+    eqLow: ps("eqLow", eqLow, IDENTITY_FX.eqLow, -12, 12),
+    eqHigh: ps("eqHigh", eqHigh, IDENTITY_FX.eqHigh, -12, 12),
     vocoderEnabled,
-    vocoderFormant,
-  }), [speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, modType, modRate, modDepth, delayType, delayTimeR, eqLow, eqHigh, vocoderEnabled, vocoderFormant]);
+    vocoderFormant: ps("vocoderFormant", vocoderFormant, IDENTITY_FX.vocoderFormant, -12, 12),
+  }), [speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, modType, modRate, modDepth, delayType, delayTimeR, eqLow, eqHigh, vocoderEnabled, vocoderFormant, ps]);
 
   const hasFx = useMemo(() =>
     speed !== 1 || distortion > 0 || delayTime > 0 || delayFeedback > 0
@@ -1066,83 +1096,69 @@ export default function Room() {
             </button>
           </div>
           <div className="border-t border-border/20 my-2" />
-          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">CONSTANTS</div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => { setSpeed(0.25); setInputGain(0.5); setOutputGain(0.2); setHighpassHz(500); setToneHz(500); setMix(0); setDistortion(0); setDelayTime(0); setDelayFeedback(0); setModType("off"); setModRate(0.1); setModDepth(0); setDelayType("mono"); setDelayTimeR(0); setEqLow(-12); setEqHigh(-12); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground/60 px-2 py-1 border border-border/50"
-              title="0 — nullity, near-silence, maximally reduced signal"
-            >
-              0
-            </button>
-            <button
-              onClick={() => { setSpeed(1); setInputGain(1); setOutputGain(1); setHighpassHz(80); setToneHz(2800); setMix(0); setDistortion(0); setDelayTime(0); setDelayFeedback(0); setModType("off"); setModRate(1); setModDepth(0); setDelayType("mono"); setDelayTimeR(0); setEqLow(0); setEqHigh(0); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border/50"
-              title="1 — unity, identity, unaltered signal"
-            >
-              1
-            </button>
-            <button
-              onClick={() => { setSpeed(2); setInputGain(1); setOutputGain(0.85); setHighpassHz(160); setToneHz(5600); setMix(0.20); setDistortion(0); setDelayTime(0.25); setDelayFeedback(0.20); setModType("chorus"); setModRate(2); setModDepth(0.5); setDelayType("stereo"); setDelayTimeR(0); setEqLow(0); setEqHigh(2); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border/50"
-              title="2 — duality, octave doubling, the first prime"
-            >
-              2
-            </button>
-            <button
-              onClick={() => { setSpeed(1.5); setInputGain(1); setOutputGain(0.88); setHighpassHz(80); setToneHz(2800); setMix(0.33); setDistortion(3); setDelayTime(0.333); setDelayFeedback(0.33); setModType("ensemble"); setModRate(3); setModDepth(0.33); setDelayType("cross"); setDelayTimeR(0); setEqLow(3); setEqHigh(3); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border/50"
-              title="3 — the triad, perfect fifth, three-fold symmetry"
-            >
-              3
-            </button>
-            <button
-              onClick={() => { setSpeed(1); setInputGain(1); setOutputGain(0.87); setHighpassHz(80); setToneHz(3142); setMix(0.314); setDistortion(0); setDelayTime(0.314); setDelayFeedback(0.314); setModType("phaser"); setModRate(3.14); setModDepth(0.618); setDelayType("stereo"); setDelayTimeR(0.159); setEqLow(3); setEqHigh(-1); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border/50"
-              title="π — circular motion, phase cycles, orbital modulation"
-            >
-              π
-            </button>
-            <button
-              onClick={() => { setSpeed(0.618); setInputGain(1); setOutputGain(0.854); setHighpassHz(89); setToneHz(2584); setMix(0.382); setDistortion(0); setDelayTime(0.618); setDelayFeedback(0.382); setModType("chorus"); setModRate(1.618); setModDepth(0.382); setDelayType("lr"); setDelayTimeR(0.382); setEqLow(2); setEqHigh(3); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border/50"
-              title="φ — golden ratio, self-similar decay, Fibonacci spiral"
-            >
-              φ
-            </button>
-            <button
-              onClick={() => { setSpeed(1.414); setInputGain(1); setOutputGain(0.849); setHighpassHz(113); setToneHz(3960); setMix(0.293); setDistortion(7); setDelayTime(0.141); setDelayFeedback(0.293); setModType("flanger"); setModRate(1.414); setModDepth(0.707); setDelayType("mono"); setDelayTimeR(0); setEqLow(-1); setEqHigh(1); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border/50"
-              title="√2 — equal temperament, semitone basis, diagonal of the unit square"
-            >
-              √2
-            </button>
-            <button
-              onClick={() => { setSpeed(0.718); setInputGain(1); setOutputGain(0.88); setHighpassHz(72); setToneHz(2718); setMix(0.368); setDistortion(0); setDelayTime(0.272); setDelayFeedback(0.632); setModType("chorus"); setModRate(0.368); setModDepth(0.632); setDelayType("cross"); setDelayTimeR(0); setEqLow(3); setEqHigh(-2); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border/50"
-              title="e — natural growth/decay, organic envelopes, 1/e attenuation"
-            >
-              e
-            </button>
-            <button
-              onClick={() => { setSpeed(1); setInputGain(1); setOutputGain(0.82); setHighpassHz(80); setToneHz(2800); setMix(0.50); setDistortion(0); setDelayTime(0.25); setDelayFeedback(0.25); setModType("phaser"); setModRate(0.25); setModDepth(1); setDelayType("lr"); setDelayTimeR(0.25); setEqLow(0); setEqHigh(0); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border/50"
-              title="i — imaginary axis, 90° phase rotation, orthogonal dimension"
-            >
-              i
-            </button>
-            <button
-              onClick={() => { setSpeed(0.97); setInputGain(1.1); setOutputGain(0.83); setHighpassHz(97); setToneHz(2300); setMix(0.47); setDistortion(11); setDelayTime(0.230); setDelayFeedback(0.53); setModType("ensemble"); setModRate(2.3); setModDepth(0.59); setDelayType("lr"); setDelayTimeR(0.370); setEqLow(2); setEqHigh(-3); setVocoderEnabled(true); setVocoderFormant(5); }}
-              className="text-[9px] font-mono tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border/50"
-              title="ℙ — prime numbers, irreducible harmonics, indivisible structure"
-            >
-              ℙ
-            </button>
+          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">CONSTANTS · PHYSICS</div>
+          <div className="flex flex-wrap gap-1.5">
+            {CONSTANT_KEYS.map((key) => {
+              const c = MATH_CONSTANTS[key];
+              const isActive = activeConstant === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => applyConstant(key)}
+                  className="flex flex-col items-center px-2.5 py-1.5 border transition-all duration-150"
+                  style={{
+                    borderColor: isActive ? c.color : "var(--border)",
+                    color: isActive ? c.color : "var(--muted-foreground)",
+                    background: isActive ? `${c.color}08` : "transparent",
+                  }}
+                  title={`${c.label} — ${c.desc}`}
+                >
+                  <span className="text-[13px] leading-none" style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300 }}>{c.label}</span>
+                  <span className="text-[6px] uppercase tracking-[0.15em] mt-0.5 opacity-60">{c.concept}</span>
+                </button>
+              );
+            })}
           </div>
-          <div className="text-[7px] font-mono text-muted-foreground/30 mt-1 tracking-wider italic">
-            0 nullity · 1 identity · 2 octave · 3 triad · π cycle · φ spiral · √2 temperament · e decay · i phase · ℙ primes
-          </div>
-          <div className="text-[8px] font-mono text-muted-foreground/50 mt-1 tracking-wider">
+          {activeConstant && (
+            <>
+              <div className="flex items-center gap-3 mt-2 px-1 py-2 border border-border/30 bg-background/50">
+                <span className="text-[20px] min-w-[28px] text-center" style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, color: MATH_CONSTANTS[activeConstant].color }}>{MATH_CONSTANTS[activeConstant].label}</span>
+                <div className="flex-1">
+                  <div className="text-[8px] font-mono uppercase tracking-widest" style={{ color: MATH_CONSTANTS[activeConstant].color }}>{MATH_CONSTANTS[activeConstant].name}</div>
+                  <div className="text-[8px] italic text-muted-foreground/50" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{MATH_CONSTANTS[activeConstant].desc}</div>
+                </div>
+                <div className="text-[8px] font-mono text-muted-foreground/40 text-right">
+                  {MATH_CONSTANTS[activeConstant].value !== null ? `scale · ${MATH_CONSTANTS[activeConstant].value!.toFixed(3)}` : "scale · —"}
+                </div>
+              </div>
+              <div className="mt-2 px-1">
+                <div className="flex justify-between text-[7px] font-mono text-muted-foreground/40 mb-1">
+                  <span>perceptual distance from identity</span>
+                  <span>{getPerceptualDistance(activeConstant).toFixed(3)}</span>
+                </div>
+                <div className="h-[2px] bg-border/30 relative">
+                  <div
+                    className="h-full transition-all duration-400"
+                    style={{
+                      width: `${getPerceptualDistance(activeConstant) * 100}%`,
+                      background: MATH_CONSTANTS[activeConstant].color,
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-[6px] font-mono text-muted-foreground/30 mt-0.5">
+                  <span>0 · nullity</span>
+                  <span>ℙ · prime</span>
+                </div>
+              </div>
+              <div className="text-[7px] font-mono text-muted-foreground/30 mt-1.5 tracking-wider">
+                adjustments scaled by <span style={{ color: MATH_CONSTANTS[activeConstant].color }}>{MATH_CONSTANTS[activeConstant].value !== null ? MATH_CONSTANTS[activeConstant].value!.toFixed(4) : "—"} ({MATH_CONSTANTS[activeConstant].concept})</span>
+                {activeConstant !== "1" && activeConstant !== "0" && (
+                  <button onClick={() => setActiveConstant(null)} className="ml-2 text-muted-foreground/30 hover:text-muted-foreground underline">disengage</button>
+                )}
+              </div>
+            </>
+          )}
+          <div className="text-[8px] font-mono text-muted-foreground/50 mt-2 tracking-wider">
             signal: input → hpass → comp → eq → mod → tone/crush → delay → vocoder → limiter
           </div>
         </div>
