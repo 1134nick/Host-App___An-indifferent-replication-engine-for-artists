@@ -5,7 +5,6 @@
  * Host App API - Members-only platform for artists
  * OpenAPI spec version: 0.1.0
  */
-import type { MessageMediaMeta } from "./messageMediaMeta";
 import type { MessageMediaType } from "./messageMediaType";
 
 export interface Message {
@@ -17,6 +16,5 @@ export interface Message {
   maskedSenderLabel?: string | null;
   mediaType?: MessageMediaType;
   mediaUrl?: string | null;
-  mediaMeta?: MessageMediaMeta;
   createdAt: Date;
 }

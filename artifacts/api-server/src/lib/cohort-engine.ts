@@ -90,24 +90,20 @@ export async function assignUserOnApplication(
     primeTeamAssignment,
   });
 
+  // Add to the shared general room with a permanent anonymous label
   const generalRoomId = await getOrCreateGeneralRoom(cohortId);
 
-  await db.insert(roomMembersTable).values({
-    roomId: generalRoomId,
-    userId,
-    maskedLabel: generateMaskedLabel(),
-  }).onConflictDoNothing();
+  const alreadyMember = await db.select()
+    .from(roomMembersTable)
+    .where(and(eq(roomMembersTable.roomId, generalRoomId), eq(roomMembersTable.userId, userId)))
+    .limit(1);
 
-  const cohortRooms = await db.select()
-    .from(roomsTable)
-    .where(and(eq(roomsTable.cohortId, cohortId), eq(roomsTable.roomType, "member_channel")));
-
-  for (const room of cohortRooms) {
+  if (alreadyMember.length === 0) {
     await db.insert(roomMembersTable).values({
-      roomId: room.id,
+      roomId: generalRoomId,
       userId,
       maskedLabel: generateMaskedLabel(),
-    }).onConflictDoNothing();
+    });
   }
 }
 

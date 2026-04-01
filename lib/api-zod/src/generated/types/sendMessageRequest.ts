@@ -5,12 +5,10 @@
  * Host App API - Members-only platform for artists
  * OpenAPI spec version: 0.1.0
  */
-import type { SendMessageRequestMediaMeta } from "./sendMessageRequestMediaMeta";
 import type { SendMessageRequestMediaType } from "./sendMessageRequestMediaType";
 
 export interface SendMessageRequest {
   content?: string | null;
   mediaType?: SendMessageRequestMediaType;
   mediaUrl?: string | null;
-  mediaMeta?: SendMessageRequestMediaMeta;
 }

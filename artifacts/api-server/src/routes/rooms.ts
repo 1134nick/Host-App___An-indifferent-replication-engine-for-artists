@@ -1,9 +1,8 @@
 import { Router } from "express";
 import { db, roomsTable, roomMembersTable, messagesTable, cohortRolesTable } from "@workspace/db";
-import { eq, and, desc, sql, max, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, max } from "drizzle-orm";
 import { generateMaskedLabel } from "../lib/cohort-engine";
 import { requireAuth } from "../lib/auth";
-import { requireAdmin } from "../lib/auth";
 
 const router = Router();
 
@@ -89,7 +88,7 @@ router.post("/", requireAuth, async (req, res) => {
           roomId: newRoom.id,
           userId: member.userId,
           maskedLabel: generateMaskedLabel(),
-        }).onConflictDoNothing();
+        });
       }
 
       return { ...newRoom, memberCount: cohortMembers.length };
@@ -135,13 +134,15 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
   const roomId = parseInt(req.params.roomId);
   if (isNaN(roomId)) { res.status(400).json({ error: "validation_error", message: "Invalid room ID" }); return; }
 
-  const { content, mediaType, mediaUrl, mediaMeta } = req.body;
+  const { content, mediaType, mediaUrl } = req.body;
 
+  // Must have either text content or a media attachment
   if (!content?.trim() && !mediaUrl) {
     res.status(400).json({ error: "validation_error", message: "Message must have content or media" });
     return;
   }
 
+  // Validate mediaType if provided
   if (mediaType && !["image", "audio", "video"].includes(mediaType)) {
     res.status(400).json({ error: "validation_error", message: "mediaType must be image, audio, or video" });
     return;
@@ -173,54 +174,12 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
       maskedSenderLabel: membership.maskedLabel || "UNKNOWN-ENTITY",
       mediaType: mediaType || null,
       mediaUrl: mediaUrl || null,
-      mediaMeta: mediaMeta || null,
     }).returning();
 
     res.status(201).json(message);
   } catch (err) {
     req.log.error({ err }, "Error sending message");
     res.status(500).json({ error: "internal_error", message: "Failed to send message" });
-  }
-});
-
-router.delete("/:roomId", requireAuth, async (req, res) => {
-  const roomId = parseInt(req.params.roomId);
-  if (isNaN(roomId)) {
-    res.status(400).json({ error: "validation_error", message: "Invalid room ID" });
-    return;
-  }
-
-  try {
-    const [room] = await db.select().from(roomsTable).where(eq(roomsTable.id, roomId)).limit(1);
-
-    if (!room) {
-      res.status(404).json({ error: "not_found", message: "Room not found" });
-      return;
-    }
-
-    if (room.roomType === "general") {
-      res.status(403).json({ error: "forbidden", message: "Cannot delete the general channel" });
-      return;
-    }
-
-    const isCreator = room.createdByUserId === req.session.userId;
-    const isAdmin = req.session.isAdmin === true;
-
-    if (!isCreator && !isAdmin) {
-      res.status(403).json({ error: "forbidden", message: "Only the channel creator or an admin can delete this channel" });
-      return;
-    }
-
-    await db.transaction(async (tx) => {
-      await tx.delete(messagesTable).where(eq(messagesTable.roomId, roomId));
-      await tx.delete(roomMembersTable).where(eq(roomMembersTable.roomId, roomId));
-      await tx.delete(roomsTable).where(eq(roomsTable.id, roomId));
-    });
-
-    res.json({ success: true });
-  } catch (err) {
-    req.log.error({ err }, "Error deleting room");
-    res.status(500).json({ error: "internal_error", message: "Failed to delete room" });
   }
 });
 
@@ -268,41 +227,6 @@ router.delete("/:roomId/messages/:messageId", requireAuth, async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error deleting message");
     res.status(500).json({ error: "internal_error", message: "Failed to delete message" });
-  }
-});
-
-router.post("/backfill-memberships", requireAdmin, async (req, res) => {
-  try {
-    const sharedRooms = await db.select().from(roomsTable)
-      .where(inArray(roomsTable.roomType, ["general", "member_channel"]));
-
-    let totalAdded = 0;
-    for (const room of sharedRooms) {
-      const cohortMembers = await db.select({ userId: cohortRolesTable.userId })
-        .from(cohortRolesTable)
-        .where(eq(cohortRolesTable.cohortId, room.cohortId));
-
-      const roomMembers = await db.select({ userId: roomMembersTable.userId })
-        .from(roomMembersTable)
-        .where(eq(roomMembersTable.roomId, room.id));
-
-      const existingIds = new Set(roomMembers.map(m => m.userId));
-      const missing = cohortMembers.filter(m => !existingIds.has(m.userId));
-
-      for (const m of missing) {
-        await db.insert(roomMembersTable).values({
-          roomId: room.id,
-          userId: m.userId,
-          maskedLabel: generateMaskedLabel(),
-        }).onConflictDoNothing();
-        totalAdded++;
-      }
-    }
-
-    res.json({ success: true, membershipsAdded: totalAdded });
-  } catch (err) {
-    req.log.error({ err }, "Error backfilling memberships");
-    res.status(500).json({ error: "internal_error", message: "Failed to backfill" });
   }
 });
 

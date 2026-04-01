@@ -203,17 +203,6 @@ export const CreateChannelBody = zod.object({
 });
 
 /**
- * @summary Delete a room (creator or admin only)
- */
-export const DeleteRoomParams = zod.object({
-  roomId: zod.coerce.number(),
-});
-
-export const DeleteRoomResponse = zod.object({
-  success: zod.boolean().optional(),
-});
-
-/**
  * @summary Get messages in a room
  */
 export const GetRoomMessagesParams = zod.object({
@@ -237,7 +226,6 @@ export const GetRoomMessagesResponseItem = zod.object({
   maskedSenderLabel: zod.string().nullish(),
   mediaType: zod.enum(["image", "audio", "video"]).nullish(),
   mediaUrl: zod.string().nullish(),
-  mediaMeta: zod.record(zod.string(), zod.unknown()).nullish(),
   createdAt: zod.date(),
 });
 export const GetRoomMessagesResponse = zod.array(GetRoomMessagesResponseItem);
@@ -253,7 +241,6 @@ export const SendMessageBody = zod.object({
   content: zod.string().nullish(),
   mediaType: zod.enum(["image", "audio", "video"]).nullish(),
   mediaUrl: zod.string().nullish(),
-  mediaMeta: zod.record(zod.string(), zod.unknown()).nullish(),
 });
 
 /**

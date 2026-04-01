@@ -11,35 +11,11 @@ import {
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Mic, MicOff, X, Send, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Radio, Zap } from "lucide-react";
-import { fetchAndDecode, createEchoNode, getAudioContext, renderWithFx, type EchoNode, type FxOptions, type ModType, type DelayType } from "../lib/audio-engine";
-import { MATH_CONSTANTS, CONSTANT_KEYS, getConstantBase, getPerceptualDistance, scaleParam, type ConstantKey, IDENTITY_FX } from "../lib/constants-physics";
+import { fetchAndDecode, createEchoNode, getAudioContext, type EchoNode } from "../lib/audio-engine";
 import Waveform from "../components/waveform";
 import AmbientDrone from "../components/ambient-drone";
 
 type PlaybackMode = "single" | "continuous";
-
-interface MediaMetaFx {
-  fx?: {
-    baked?: boolean;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
-function isBakedMessage(mediaMeta: { [key: string]: unknown } | null | undefined): boolean {
-  if (!mediaMeta) return false;
-  const meta = mediaMeta as MediaMetaFx;
-  return meta.fx?.baked === true;
-}
-
-const CLEAN_FX: FxOptions = {
-  playbackRate: 1, distortionAmount: 0, delayTime: 0, delayFeedback: 0,
-  inputGain: 1, outputGain: 0.9, mix: 0.28, toneHz: 2800, highpassHz: 80,
-  modType: "off", modRate: 1, modDepth: 0.5,
-  delayType: "mono", delayTimeR: 0,
-  eqLow: 0, eqHigh: 0,
-  vocoderEnabled: false, vocoderFormant: 0,
-};
 
 function BlobAudioPlayer({
   src,
@@ -48,7 +24,10 @@ function BlobAudioPlayer({
   onStop,
   autoPlay,
   isActive,
-  fx,
+  playbackRate,
+  distortionAmount,
+  delayTime,
+  delayFeedback,
   muted,
   onAnalyser,
 }: {
@@ -58,7 +37,10 @@ function BlobAudioPlayer({
   onStop?: () => void;
   autoPlay?: boolean;
   isActive: boolean;
-  fx: FxOptions;
+  playbackRate: number;
+  distortionAmount: number;
+  delayTime: number;
+  delayFeedback: number;
   muted: boolean;
   onAnalyser?: (a: AnalyserNode | null) => void;
 }) {
@@ -71,7 +53,6 @@ function BlobAudioPlayer({
   const [duration, setDuration] = useState(0);
   const startTimeRef = useRef(0);
   const offsetRef = useRef(0);
-  const rateAtStartRef = useRef(1);
   const rafRef = useRef<number>(0);
   const loadedRef = useRef(false);
 
@@ -90,31 +71,11 @@ function BlobAudioPlayer({
       try {
         echoNodeRef.current.source.stop();
         echoNodeRef.current.source.disconnect();
-        echoNodeRef.current.outputGain.disconnect();
+        echoNodeRef.current.gain.disconnect();
         echoNodeRef.current.analyser.disconnect();
         echoNodeRef.current.distortion.disconnect();
         echoNodeRef.current.delay.disconnect();
-        echoNodeRef.current.feedbackGain.disconnect();
-        echoNodeRef.current.feedbackFilter.disconnect();
-        echoNodeRef.current.inputGain.disconnect();
-        echoNodeRef.current.highpass.disconnect();
-        echoNodeRef.current.compressor.disconnect();
-        echoNodeRef.current.tone.disconnect();
-        echoNodeRef.current.dryGain.disconnect();
-        echoNodeRef.current.wetGain.disconnect();
-        echoNodeRef.current.limiter.disconnect();
-        echoNodeRef.current.eqLow.disconnect();
-        echoNodeRef.current.eqHigh.disconnect();
-        if (echoNodeRef.current._oscillators) {
-          for (const o of echoNodeRef.current._oscillators) {
-            try { o.stop(); } catch {}
-          }
-        }
-        if (echoNodeRef.current._extras) {
-          for (const n of echoNodeRef.current._extras) {
-            try { n.disconnect(); } catch {}
-          }
-        }
+        echoNodeRef.current.delayGain.disconnect();
       } catch {}
       echoNodeRef.current = null;
     }
@@ -147,16 +108,19 @@ function BlobAudioPlayer({
       const buf = bufferRef.current || (await loadBuffer());
       if (!buf) return;
 
-      const rate = fx.playbackRate ?? 1;
-      const node = createEchoNode(buf, fx);
+      const node = createEchoNode(buf, {
+        playbackRate,
+        distortionAmount,
+        delayTime,
+        delayFeedback,
+      });
       echoNodeRef.current = node;
-      node.outputGain.gain.value = muted ? 0 : (fx.outputGain ?? 0.9);
+      node.gain.gain.value = muted ? 0 : 1;
       onAnalyserRef.current?.(node.analyser);
 
       const ac = getAudioContext();
       startTimeRef.current = ac.currentTime;
       offsetRef.current = fromOffset;
-      rateAtStartRef.current = rate;
 
       node.source.onended = () => {
         setPlaying(false);
@@ -174,26 +138,24 @@ function BlobAudioPlayer({
       const tick = () => {
         if (!echoNodeRef.current) return;
         const ac2 = getAudioContext();
-        const currentRate = echoNodeRef.current.source.playbackRate.value;
-        const elapsed = (ac2.currentTime - startTimeRef.current) * currentRate + fromOffset;
+        const elapsed = (ac2.currentTime - startTimeRef.current) * playbackRate + fromOffset;
         setProgress(Math.min(elapsed, buf.duration));
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
     } catch {}
-  }, [cleanup, loadBuffer, fx, muted]);
+  }, [cleanup, loadBuffer, playbackRate, distortionAmount, delayTime, delayFeedback, muted]);
 
   const stopPlayback = useCallback(() => {
     if (echoNodeRef.current) {
       const ac = getAudioContext();
-      const rate = echoNodeRef.current.source.playbackRate.value;
-      const elapsed = (ac.currentTime - startTimeRef.current) * rate + offsetRef.current;
+      const elapsed = (ac.currentTime - startTimeRef.current) * playbackRate + offsetRef.current;
       offsetRef.current = elapsed;
     }
     cleanup();
     setPlaying(false);
     onStopRef.current?.();
-  }, [cleanup]);
+  }, [cleanup, playbackRate]);
 
   const togglePlay = useCallback(async () => {
     try {
@@ -228,78 +190,35 @@ function BlobAudioPlayer({
 
   useEffect(() => {
     if (echoNodeRef.current) {
-      echoNodeRef.current.outputGain.gain.value = muted ? 0 : (fx.outputGain ?? 0.9);
+      echoNodeRef.current.gain.gain.value = muted ? 0 : 1;
     }
-  }, [muted, fx.outputGain]);
+  }, [muted]);
 
   useEffect(() => {
     if (echoNodeRef.current && playing) {
-      echoNodeRef.current.source.playbackRate.value = fx.playbackRate ?? 1;
+      echoNodeRef.current.source.playbackRate.value = playbackRate;
     }
-  }, [fx.playbackRate, playing]);
+  }, [playbackRate, playing]);
 
   useEffect(() => {
-    if (echoNodeRef.current && playing) {
-      const drive = fx.distortionAmount ?? 0;
-      if (drive > 0) {
-        const samples = 44100;
-        const curve = new Float32Array(samples);
-        const deg = Math.PI / 180;
-        for (let i = 0; i < samples; i++) {
-          const x = (i * 2) / samples - 1;
-          curve[i] = ((3 + drive) * x * 20 * deg) / (Math.PI + drive * Math.abs(x));
-        }
-        echoNodeRef.current.distortion.curve = curve;
-      } else {
-        echoNodeRef.current.distortion.curve = null;
+    if (echoNodeRef.current && playing && distortionAmount > 0) {
+      const samples = 44100;
+      const curve = new Float32Array(samples);
+      const deg = Math.PI / 180;
+      for (let i = 0; i < samples; i++) {
+        const x = (i * 2) / samples - 1;
+        curve[i] = ((3 + distortionAmount) * x * 20 * deg) / (Math.PI + distortionAmount * Math.abs(x));
       }
+      echoNodeRef.current.distortion.curve = curve;
     }
-  }, [fx.distortionAmount, playing]);
+  }, [distortionAmount, playing]);
 
   useEffect(() => {
     if (echoNodeRef.current && playing) {
-      echoNodeRef.current.delay.delayTime.value = Math.min(fx.delayTime ?? 0, 1.2);
-      echoNodeRef.current.feedbackGain.gain.value = Math.min(fx.delayFeedback ?? 0, 0.75);
+      echoNodeRef.current.delay.delayTime.value = delayTime;
+      echoNodeRef.current.delayGain.gain.value = delayFeedback;
     }
-  }, [fx.delayTime, fx.delayFeedback, playing]);
-
-  useEffect(() => {
-    if (echoNodeRef.current && playing) {
-      echoNodeRef.current.inputGain.gain.value = fx.inputGain ?? 1;
-    }
-  }, [fx.inputGain, playing]);
-
-  useEffect(() => {
-    if (echoNodeRef.current && playing) {
-      echoNodeRef.current.tone.frequency.value = fx.toneHz ?? 2800;
-    }
-  }, [fx.toneHz, playing]);
-
-  useEffect(() => {
-    if (echoNodeRef.current && playing) {
-      echoNodeRef.current.highpass.frequency.value = fx.highpassHz ?? 80;
-    }
-  }, [fx.highpassHz, playing]);
-
-  useEffect(() => {
-    if (echoNodeRef.current && playing && fx.mix !== undefined) {
-      const m = Math.max(0, Math.min(1, fx.mix));
-      echoNodeRef.current.dryGain.gain.value = 1 - m;
-      echoNodeRef.current.wetGain.gain.value = m;
-    }
-  }, [fx.mix, playing]);
-
-  useEffect(() => {
-    if (echoNodeRef.current && playing) {
-      echoNodeRef.current.eqLow.gain.value = fx.eqLow ?? 0;
-    }
-  }, [fx.eqLow, playing]);
-
-  useEffect(() => {
-    if (echoNodeRef.current && playing) {
-      echoNodeRef.current.eqHigh.gain.value = fx.eqHigh ?? 0;
-    }
-  }, [fx.eqHigh, playing]);
+  }, [delayTime, delayFeedback, playing]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -369,7 +288,7 @@ function BlobAudioPlayer({
   );
 }
 
-type MediaMode = "none" | "recording" | "preview";
+type MediaMode = "none" | "recording";
 const TRACK_OPTIONS = [1, 2, 3, Infinity] as const;
 
 export default function Room() {
@@ -407,85 +326,9 @@ export default function Room() {
   const [distortion, setDistortion] = useState(0);
   const [delayTime, setDelayTime] = useState(0);
   const [delayFeedback, setDelayFeedback] = useState(0);
-  const [inputGain, setInputGain] = useState(1);
-  const [outputGain, setOutputGain] = useState(0.9);
-  const [mix, setMix] = useState(0.28);
-  const [toneHz, setToneHz] = useState(2800);
-  const [highpassHz, setHighpassHz] = useState(80);
   const [showFx, setShowFx] = useState(false);
 
-  const [modType, setModType] = useState<ModType>("off");
-  const [modRate, setModRate] = useState(1);
-  const [modDepth, setModDepth] = useState(0.5);
-  const [delayType, setDelayType] = useState<DelayType>("mono");
-  const [delayTimeR, setDelayTimeR] = useState(0);
-  const [eqLow, setEqLow] = useState(0);
-  const [eqHigh, setEqHigh] = useState(0);
-  const [vocoderEnabled, setVocoderEnabled] = useState(false);
-  const [vocoderFormant, setVocoderFormant] = useState(0);
-  const [sendMode, setSendMode] = useState<"raw" | "baked">("raw");
-  const [activeConstant, setActiveConstant] = useState<ConstantKey | null>(null);
-
-  const applyConstant = useCallback((key: ConstantKey) => {
-    setActiveConstant(key);
-    const base = getConstantBase(key);
-    setSpeed(base.speed);
-    setDistortion(base.distortion);
-    setDelayTime(base.delayTime);
-    setDelayFeedback(base.delayFeedback);
-    setInputGain(base.inputGain);
-    setOutputGain(base.outputGain);
-    setMix(base.mix);
-    setToneHz(base.toneHz);
-    setHighpassHz(base.highpassHz);
-    setModType(base.modType as ModType);
-    setModRate(base.modRate);
-    setModDepth(base.modDepth);
-    setDelayType(base.delayType as DelayType);
-    setDelayTimeR(base.delayTimeR);
-    setEqLow(base.eqLow);
-    setEqHigh(base.eqHigh);
-    setVocoderEnabled(base.vocoderEnabled);
-    setVocoderFormant(base.vocoderFormant);
-  }, []);
-
-  const ps = useCallback((param: string, raw: number, identity: number, min: number, max: number): number => {
-    if (!activeConstant || activeConstant === "1") return raw;
-    return scaleParam(activeConstant, param, raw, identity, min, max);
-  }, [activeConstant]);
-
-  const fxOptions: FxOptions = useMemo(() => ({
-    playbackRate: ps("speed", speed, IDENTITY_FX.speed, 0.25, 2),
-    distortionAmount: ps("distortion", distortion, IDENTITY_FX.distortion, 0, 100),
-    delayTime: ps("delayTime", delayTime, IDENTITY_FX.delayTime, 0, 1.2),
-    delayFeedback: ps("delayFeedback", delayFeedback, IDENTITY_FX.delayFeedback, 0, 0.75),
-    inputGain: ps("inputGain", inputGain, IDENTITY_FX.inputGain, 0.5, 2),
-    outputGain: ps("outputGain", outputGain, IDENTITY_FX.outputGain, 0.2, 1.2),
-    mix: ps("mix", mix, IDENTITY_FX.mix, 0, 1),
-    toneHz: ps("toneHz", toneHz, IDENTITY_FX.toneHz, 500, 8000),
-    highpassHz: ps("highpassHz", highpassHz, IDENTITY_FX.highpassHz, 40, 180),
-    modType,
-    modRate: ps("modRate", modRate, IDENTITY_FX.modRate, 0.1, 8),
-    modDepth: ps("modDepth", modDepth, IDENTITY_FX.modDepth, 0, 1),
-    delayType,
-    delayTimeR: ps("delayTimeR", delayTimeR, IDENTITY_FX.delayTimeR, 0, 1.2),
-    eqLow: ps("eqLow", eqLow, IDENTITY_FX.eqLow, -12, 12),
-    eqHigh: ps("eqHigh", eqHigh, IDENTITY_FX.eqHigh, -12, 12),
-    vocoderEnabled,
-    vocoderFormant: ps("vocoderFormant", vocoderFormant, IDENTITY_FX.vocoderFormant, -12, 12),
-  }), [speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, modType, modRate, modDepth, delayType, delayTimeR, eqLow, eqHigh, vocoderEnabled, vocoderFormant, ps]);
-
-  const hasFx = useMemo(() =>
-    speed !== 1 || distortion > 0 || delayTime > 0 || delayFeedback > 0
-    || inputGain !== 1 || outputGain !== 0.9 || mix !== 0.28 || toneHz !== 2800 || highpassHz !== 80
-    || modType !== "off" || delayType !== "mono" || eqLow !== 0 || eqHigh !== 0
-    || vocoderEnabled || vocoderFormant !== 0,
-  [speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, modType, delayType, eqLow, eqHigh, vocoderEnabled, vocoderFormant]);
-
   const [currentAnalyser, setCurrentAnalyser] = useState<AnalyserNode | null>(null);
-  const [previewAnalyser, setPreviewAnalyser] = useState<AnalyserNode | null>(null);
-  const [previewPlaying, setPreviewPlaying] = useState(false);
-  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
 
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -610,27 +453,10 @@ export default function Room() {
     setMediaMode("none");
     setIsRecording(false);
     setRecordingSeconds(0);
-    setPreviewPlaying(false);
-    setPreviewAnalyser(null);
-    setSendMode("raw");
-    if (previewBlobUrl) {
-      URL.revokeObjectURL(previewBlobUrl);
-      setPreviewBlobUrl(null);
-    }
     if (timerRef.current) clearInterval(timerRef.current);
     stopStream();
     setTimeout(() => { cancelledRef.current = false; }, 50);
-  }, [stopStream, previewBlobUrl]);
-
-  useEffect(() => {
-    if (capturedAudio) {
-      const url = URL.createObjectURL(capturedAudio);
-      setPreviewBlobUrl(url);
-      return () => URL.revokeObjectURL(url);
-    } else {
-      setPreviewBlobUrl(null);
-    }
-  }, [capturedAudio]);
+  }, [stopStream]);
 
   useEffect(() => () => { stopStream(); if (timerRef.current) clearInterval(timerRef.current); }, [stopStream]);
 
@@ -638,16 +464,7 @@ export default function Room() {
     setError(null);
     clearCaptures();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 48000,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: false,
-        },
-        video: false,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       streamRef.current = stream;
       audioChunksRef.current = [];
       const mimeOptions = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
@@ -663,8 +480,6 @@ export default function Room() {
         if (cancelledRef.current) return;
         const blob = new Blob(audioChunksRef.current, { type: actualMime });
         setCapturedAudio(blob);
-        setMediaMode("preview");
-        setShowFx(true);
         stopStream();
       };
       recorder.start(250);
@@ -698,80 +513,23 @@ export default function Room() {
     setIsUploading(true);
     setError(null);
     try {
-      const isBaked = sendMode === "baked";
-
-      let uploadBlob: Blob;
-      let mime: string;
-      let ext: string;
-
-      if (isBaked) {
-        uploadBlob = await renderWithFx(mediaBlob, {
-          playbackRate: speed,
-          distortionAmount: distortion,
-          delayTime,
-          delayFeedback,
-          inputGain,
-          outputGain,
-          mix,
-          toneHz,
-          highpassHz,
-          modType,
-          modRate,
-          modDepth,
-          delayType,
-          delayTimeR,
-          eqLow,
-          eqHigh,
-          vocoderEnabled,
-          vocoderFormant,
-        });
-        mime = "audio/wav";
-        ext = "wav";
-      } else {
-        uploadBlob = mediaBlob;
-        mime = mediaBlob.type || "audio/webm";
-        ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
-      }
-
+      const mime = mediaBlob.type || "audio/webm";
+      const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
       const urlData = await requestUploadUrlMutation.mutateAsync({
         data: {
           name: `capture.${ext}`,
-          size: uploadBlob.size,
+          size: mediaBlob.size,
           contentType: mime,
         },
       });
 
       const uploadRes = await fetch(urlData.uploadURL, {
         method: "PUT",
-        body: uploadBlob,
+        body: mediaBlob,
         headers: { "Content-Type": mime },
       });
 
       if (!uploadRes.ok) throw new Error("Upload failed");
-
-      const fxData = {
-        playbackRate: speed,
-        distortionAmount: distortion,
-        delayTime,
-        delayFeedback,
-        inputGain,
-        outputGain,
-        mix,
-        toneHz,
-        highpassHz,
-        modType,
-        modRate,
-        modDepth,
-        delayType,
-        delayTimeR,
-        eqLow,
-        eqHigh,
-        vocoderEnabled,
-        vocoderFormant,
-        ...(isBaked ? { baked: true } : {}),
-      };
-
-      const mediaMeta = (hasFx || isBaked) ? { fx: fxData } : null;
 
       await new Promise<void>((resolve, reject) => {
         sendMessageMutation.mutate(
@@ -781,7 +539,6 @@ export default function Room() {
               content: content.trim() || null,
               mediaType: "audio",
               mediaUrl: urlData.objectPath,
-              mediaMeta,
             },
           },
           {
@@ -800,10 +557,11 @@ export default function Room() {
     } finally {
       setIsUploading(false);
     }
-  }, [content, roomId, speed, distortion, delayTime, delayFeedback, inputGain, outputGain, mix, toneHz, highpassHz, modType, modRate, modDepth, delayType, delayTimeR, eqLow, eqHigh, vocoderEnabled, vocoderFormant, sendMode, hasFx, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
+  }, [content, roomId, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
 
   const handleSendText = (e: React.FormEvent) => {
     e.preventDefault();
+    if (capturedAudio) { uploadAndSend(capturedAudio); return; }
     if (!content.trim()) return;
     sendMessageMutation.mutate(
       { roomId, data: { content } },
@@ -836,6 +594,7 @@ export default function Room() {
   }
 
   const isPeripheral = role?.roleType === "peripheral";
+  const hasPending = !!capturedAudio;
   const isBusy = sendMessageMutation.isPending || isUploading;
 
   return (
@@ -929,237 +688,103 @@ export default function Room() {
       </div>
 
       {showFx && (
-        <div className="shrink-0 mb-2 p-3 border border-border/50 bg-card/50 space-y-2 max-h-[60vh] overflow-y-auto">
+        <div className="shrink-0 mb-2 p-3 border border-border/50 bg-card/50 space-y-2">
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">SPEED</label>
-            <input type="range" min="0.25" max="2" step="0.05" value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{speed.toFixed(2)}x</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">INPUT</label>
-            <input type="range" min="0.5" max="2" step="0.01" value={inputGain} onChange={(e) => setInputGain(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{inputGain.toFixed(2)}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">OUTPUT</label>
-            <input type="range" min="0.2" max="1.2" step="0.01" value={outputGain} onChange={(e) => setOutputGain(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{outputGain.toFixed(2)}</span>
-          </div>
-          <div className="border-t border-border/30 my-1" />
-          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">EQ</div>
-          <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">HPASS</label>
-            <input type="range" min="40" max="180" step="1" value={highpassHz} onChange={(e) => setHighpassHz(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.65)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{Math.round(highpassHz)}Hz</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">TONE</label>
-            <input type="range" min="500" max="8000" step="10" value={toneHz} onChange={(e) => setToneHz(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{toneHz >= 1000 ? `${(toneHz / 1000).toFixed(1)}k` : `${Math.round(toneHz)}`}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">LO SHELF</label>
-            <input type="range" min="-12" max="12" step="0.5" value={eqLow} onChange={(e) => setEqLow(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{eqLow > 0 ? "+" : ""}{eqLow.toFixed(1)}dB</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">HI SHELF</label>
-            <input type="range" min="-12" max="12" step="0.5" value={eqHigh} onChange={(e) => setEqHigh(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{eqHigh > 0 ? "+" : ""}{eqHigh.toFixed(1)}dB</span>
-          </div>
-          <div className="border-t border-border/30 my-1" />
-          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">MODULATION</div>
-          <div className="flex flex-wrap gap-1 mb-1">
-            {(["off", "chorus", "flanger", "ensemble", "phaser"] as ModType[]).map((t) => (
-              <button key={t} onClick={() => setModType(t)} className={`text-[8px] font-mono uppercase tracking-widest px-2 py-0.5 border ${modType === t ? "border-foreground text-foreground bg-foreground/10" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                {t}
-              </button>
-            ))}
-          </div>
-          {modType !== "off" && (
-            <>
-              <div className="flex items-center gap-3">
-                <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">RATE</label>
-                <input type="range" min="0.1" max="8" step="0.1" value={modRate} onChange={(e) => setModRate(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-                <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{modRate.toFixed(1)}Hz</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">DEPTH</label>
-                <input type="range" min="0" max="1" step="0.01" value={modDepth} onChange={(e) => setModDepth(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-                <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{Math.round(modDepth * 100)}%</span>
-              </div>
-            </>
-          )}
-          <div className="border-t border-border/30 my-1" />
-          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">AMP</div>
-          <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">MIX</label>
-            <input type="range" min="0" max="1" step="0.01" value={mix} onChange={(e) => setMix(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{Math.round(mix * 100)}%</span>
+            <input
+              type="range"
+              min="0.25"
+              max="2"
+              step="0.05"
+              value={speed}
+              onChange={(e) => setSpeed(parseFloat(e.target.value))}
+              className="flex-1 h-1 cursor-pointer"
+              style={{ accentColor: "rgba(40,80,180,0.85)" }}
+            />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{speed.toFixed(2)}x</span>
           </div>
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">CRUSH</label>
-            <input type="range" min="0" max="100" step="1" value={distortion} onChange={(e) => setDistortion(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{distortion}</span>
-          </div>
-          <div className="border-t border-border/30 my-1" />
-          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">DELAY</div>
-          <div className="flex flex-wrap gap-1 mb-1">
-            {(["mono", "stereo", "cross", "lr"] as DelayType[]).map((t) => (
-              <button key={t} onClick={() => setDelayType(t)} className={`text-[8px] font-mono uppercase tracking-widest px-2 py-0.5 border ${delayType === t ? "border-foreground text-foreground bg-foreground/10" : "border-border text-muted-foreground hover:text-foreground"}`}>
-                {t === "lr" ? "L/R" : t}
-              </button>
-            ))}
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="1"
+              value={distortion}
+              onChange={(e) => setDistortion(parseFloat(e.target.value))}
+              className="flex-1 h-1 cursor-pointer"
+              style={{ accentColor: "rgba(190,40,40,0.85)" }}
+            />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{distortion}</span>
           </div>
           <div className="flex items-center gap-3">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">{delayType === "lr" ? "DELAY L" : "DELAY"}</label>
-            <input type="range" min="0" max="1.2" step="0.01" value={delayTime} onChange={(e) => setDelayTime(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{delayTime.toFixed(2)}s</span>
+            <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">DELAY</label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={delayTime}
+              onChange={(e) => setDelayTime(parseFloat(e.target.value))}
+              className="flex-1 h-1 cursor-pointer"
+              style={{ accentColor: "rgba(40,80,180,0.85)" }}
+            />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{delayTime.toFixed(2)}s</span>
           </div>
-          {delayType === "lr" && (
-            <div className="flex items-center gap-3">
-              <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">DELAY R</label>
-              <input type="range" min="0" max="1.2" step="0.01" value={delayTimeR} onChange={(e) => setDelayTimeR(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(40,80,180,0.85)" }} />
-              <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{delayTimeR.toFixed(2)}s</span>
-            </div>
-          )}
           <div className="flex items-center gap-3">
             <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">FEEDBACK</label>
-            <input type="range" min="0" max="0.75" step="0.01" value={delayFeedback} onChange={(e) => setDelayFeedback(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.65)" }} />
-            <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{Math.round(delayFeedback * 100)}%</span>
+            <input
+              type="range"
+              min="0"
+              max="0.9"
+              step="0.01"
+              value={delayFeedback}
+              onChange={(e) => setDelayFeedback(parseFloat(e.target.value))}
+              className="flex-1 h-1 cursor-pointer"
+              style={{ accentColor: "rgba(190,40,40,0.65)" }}
+            />
+            <span className="text-[9px] font-mono text-muted-foreground w-10 text-right">{(delayFeedback * 100).toFixed(0)}%</span>
           </div>
-          <div className="border-t border-border/30 my-1" />
-          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">VOCODER</div>
-          <div className="flex items-center gap-3 mb-1">
-            <button onClick={() => setVocoderEnabled(!vocoderEnabled)} className={`text-[8px] font-mono uppercase tracking-widest px-2 py-0.5 border ${vocoderEnabled ? "border-[var(--depth-red)] text-[var(--depth-red)] bg-[var(--depth-red)]/10" : "border-border text-muted-foreground hover:text-foreground"}`}>
-              {vocoderEnabled ? "ON" : "OFF"}
-            </button>
-            <span className="text-[8px] font-mono text-muted-foreground/50">8-band · sawtooth carrier</span>
-          </div>
-          {vocoderEnabled && (
-            <div className="flex items-center gap-3">
-              <label className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground w-16">FORMANT</label>
-              <input type="range" min="-12" max="12" step="1" value={vocoderFormant} onChange={(e) => setVocoderFormant(parseFloat(e.target.value))} className="flex-1 h-1 cursor-pointer" style={{ accentColor: "rgba(190,40,40,0.85)" }} />
-              <span className="text-[9px] font-mono text-muted-foreground w-12 text-right">{vocoderFormant > 0 ? "+" : ""}{vocoderFormant}st</span>
-            </div>
-          )}
-          <div className="border-t border-border/30 my-1" />
-          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">PRESETS</div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mt-1">
             <button
-              onClick={() => { setSpeed(1); setInputGain(1); setOutputGain(0.9); setHighpassHz(80); setToneHz(2800); setMix(0.28); setDistortion(0); setDelayTime(0); setDelayFeedback(0); setModType("off"); setModRate(1); setModDepth(0.5); setDelayType("mono"); setDelayTimeR(0); setEqLow(0); setEqHigh(0); setVocoderEnabled(false); setVocoderFormant(0); }}
+              onClick={() => { setSpeed(1); setDistortion(0); setDelayTime(0); setDelayFeedback(0); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
             >
               CLEAN
             </button>
             <button
-              onClick={() => { setSpeed(0.92); setInputGain(1.05); setOutputGain(0.86); setHighpassHz(95); setToneHz(2400); setMix(0.30); setDistortion(18); setDelayTime(0.28); setDelayFeedback(0.42); setModType("phaser"); setModRate(0.4); setModDepth(0.6); setDelayType("stereo"); setDelayTimeR(0); setEqLow(2); setEqHigh(-3); setVocoderEnabled(false); setVocoderFormant(0); }}
+              onClick={() => { setSpeed(0.5); setDistortion(40); setDelayTime(0.3); setDelayFeedback(0.5); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
             >
               HAUNTED
             </button>
             <button
-              onClick={() => { setSpeed(1.18); setInputGain(1.15); setOutputGain(0.82); setHighpassHz(120); setToneHz(1700); setMix(0.22); setDistortion(55); setDelayTime(0.08); setDelayFeedback(0.22); setModType("flanger"); setModRate(3); setModDepth(0.8); setDelayType("mono"); setDelayTimeR(0); setEqLow(-4); setEqHigh(6); setVocoderEnabled(false); setVocoderFormant(0); }}
+              onClick={() => { setSpeed(1.5); setDistortion(80); setDelayTime(0.1); setDelayFeedback(0.3); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
             >
               CRUSHED
             </button>
             <button
-              onClick={() => { setSpeed(0.84); setInputGain(1); setOutputGain(0.88); setHighpassHz(70); setToneHz(1100); setMix(0.40); setDistortion(8); setDelayTime(0.52); setDelayFeedback(0.48); setModType("chorus"); setModRate(0.8); setModDepth(0.6); setDelayType("cross"); setDelayTimeR(0); setEqLow(4); setEqHigh(-6); setVocoderEnabled(false); setVocoderFormant(0); }}
+              onClick={() => { setSpeed(0.75); setDistortion(10); setDelayTime(0.6); setDelayFeedback(0.7); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground px-2 py-1 border border-border"
             >
               SUBMERGED
             </button>
             <button
-              onClick={() => { setSpeed(0.68); setInputGain(1.2); setOutputGain(0.72); setHighpassHz(105); setToneHz(900); setMix(0.55); setDistortion(42); setDelayTime(0.82); setDelayFeedback(0.68); setModType("ensemble"); setModRate(1.2); setModDepth(0.9); setDelayType("stereo"); setDelayTimeR(0); setEqLow(-2); setEqHigh(-8); setVocoderEnabled(false); setVocoderFormant(0); }}
+              onClick={() => { setSpeed(0.35); setDistortion(65); setDelayTime(0.8); setDelayFeedback(0.85); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
             >
               VOID
             </button>
             <button
-              onClick={() => { setSpeed(1.32); setInputGain(0.95); setOutputGain(0.92); setHighpassHz(130); setToneHz(4200); setMix(0.16); setDistortion(14); setDelayTime(0.05); setDelayFeedback(0.14); setModType("flanger"); setModRate(5); setModDepth(0.4); setDelayType("mono"); setDelayTimeR(0); setEqLow(0); setEqHigh(4); setVocoderEnabled(false); setVocoderFormant(0); }}
+              onClick={() => { setSpeed(2); setDistortion(20); setDelayTime(0.05); setDelayFeedback(0.15); }}
               className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
             >
               NERVE
             </button>
-            <button
-              onClick={() => { setSpeed(0.9); setInputGain(1.1); setOutputGain(0.8); setHighpassHz(90); setToneHz(3200); setMix(0.45); setDistortion(5); setDelayTime(0.12); setDelayFeedback(0.3); setModType("off"); setModRate(1); setModDepth(0.5); setDelayType("mono"); setDelayTimeR(0); setEqLow(0); setEqHigh(0); setVocoderEnabled(true); setVocoderFormant(0); }}
-              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-red)] px-2 py-1 border border-border"
-            >
-              ROBOT
-            </button>
-            <button
-              onClick={() => { setSpeed(0.78); setInputGain(1); setOutputGain(0.85); setHighpassHz(60); setToneHz(5000); setMix(0.50); setDistortion(0); setDelayTime(0.35); setDelayFeedback(0.55); setModType("ensemble"); setModRate(0.5); setModDepth(0.7); setDelayType("lr"); setDelayTimeR(0.5); setEqLow(3); setEqHigh(2); setVocoderEnabled(false); setVocoderFormant(0); }}
-              className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground hover:text-[var(--depth-blue)] px-2 py-1 border border-border"
-            >
-              CATHEDRAL
-            </button>
           </div>
-          <div className="border-t border-border/20 my-2" />
-          <div className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/60 mb-1">CONSTANTS · PHYSICS</div>
-          <div className="flex flex-wrap gap-1.5">
-            {CONSTANT_KEYS.map((key) => {
-              const c = MATH_CONSTANTS[key];
-              const isActive = activeConstant === key;
-              return (
-                <button
-                  key={key}
-                  onClick={() => applyConstant(key)}
-                  className="flex flex-col items-center px-2.5 py-1.5 border transition-all duration-150"
-                  style={{
-                    borderColor: isActive ? c.color : "var(--border)",
-                    color: isActive ? c.color : "var(--muted-foreground)",
-                    background: isActive ? `${c.color}08` : "transparent",
-                  }}
-                  title={`${c.label} — ${c.desc}`}
-                >
-                  <span className="text-[13px] leading-none" style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300 }}>{c.label}</span>
-                  <span className="text-[6px] uppercase tracking-[0.15em] mt-0.5 opacity-60">{c.concept}</span>
-                </button>
-              );
-            })}
-          </div>
-          {activeConstant && (
-            <>
-              <div className="flex items-center gap-3 mt-2 px-1 py-2 border border-border/30 bg-background/50">
-                <span className="text-[20px] min-w-[28px] text-center" style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, color: MATH_CONSTANTS[activeConstant].color }}>{MATH_CONSTANTS[activeConstant].label}</span>
-                <div className="flex-1">
-                  <div className="text-[8px] font-mono uppercase tracking-widest" style={{ color: MATH_CONSTANTS[activeConstant].color }}>{MATH_CONSTANTS[activeConstant].name}</div>
-                  <div className="text-[8px] italic text-muted-foreground/50" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{MATH_CONSTANTS[activeConstant].desc}</div>
-                </div>
-                <div className="text-[8px] font-mono text-muted-foreground/40 text-right">
-                  {MATH_CONSTANTS[activeConstant].value !== null ? `scale · ${MATH_CONSTANTS[activeConstant].value!.toFixed(3)}` : "scale · —"}
-                </div>
-              </div>
-              <div className="mt-2 px-1">
-                <div className="flex justify-between text-[7px] font-mono text-muted-foreground/40 mb-1">
-                  <span>perceptual distance from identity</span>
-                  <span>{getPerceptualDistance(activeConstant).toFixed(3)}</span>
-                </div>
-                <div className="h-[2px] bg-border/30 relative">
-                  <div
-                    className="h-full transition-all duration-400"
-                    style={{
-                      width: `${getPerceptualDistance(activeConstant) * 100}%`,
-                      background: MATH_CONSTANTS[activeConstant].color,
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between text-[6px] font-mono text-muted-foreground/30 mt-0.5">
-                  <span>0 · nullity</span>
-                  <span>ℙ · prime</span>
-                </div>
-              </div>
-              <div className="text-[7px] font-mono text-muted-foreground/30 mt-1.5 tracking-wider">
-                adjustments scaled by <span style={{ color: MATH_CONSTANTS[activeConstant].color }}>{MATH_CONSTANTS[activeConstant].value !== null ? MATH_CONSTANTS[activeConstant].value!.toFixed(4) : "—"} ({MATH_CONSTANTS[activeConstant].concept})</span>
-                {activeConstant !== "1" && activeConstant !== "0" && (
-                  <button onClick={() => setActiveConstant(null)} className="ml-2 text-muted-foreground/30 hover:text-muted-foreground underline">disengage</button>
-                )}
-              </div>
-            </>
-          )}
-          <div className="text-[8px] font-mono text-muted-foreground/50 mt-2 tracking-wider">
-            signal: input → hpass → comp → eq → mod → tone/crush → delay → vocoder → limiter
+          <div className="text-[8px] font-mono text-muted-foreground/50 mt-1 tracking-wider">
+            signal: waveshaper distortion + delay chain
           </div>
         </div>
       )}
@@ -1226,13 +851,13 @@ export default function Room() {
                   onEnded={() => handleMediaEnded(msg.id)}
                   onPlay={() => handleMediaPlay(msg.id)}
                   onStop={() => handleMediaStop(msg.id)}
-                  fx={isBakedMessage(msg.mediaMeta) ? CLEAN_FX : fxOptions}
+                  playbackRate={speed}
+                  distortionAmount={distortion}
+                  delayTime={delayTime}
+                  delayFeedback={delayFeedback}
                   muted={isThisMuted}
                   onAnalyser={isThisPlaying ? setCurrentAnalyser : undefined}
                 />
-              )}
-              {isBakedMessage(msg.mediaMeta) && (
-                <span className="text-[8px] font-mono uppercase tracking-widest text-muted-foreground/40 mt-1">baked</span>
               )}
             </div>
           );
@@ -1264,97 +889,24 @@ export default function Room() {
         </div>
       )}
 
-      {mediaMode === "preview" && previewBlobUrl && (
-        <div className="shrink-0 mb-4 border border-[var(--depth-blue)]/40 bg-card p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-[var(--depth-blue)]">
-              preview — adjust fx before sending
-            </span>
-            <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {previewAnalyser && previewPlaying && (
-            <div className="border border-border/30 bg-black/40 px-2 py-1">
-              <Waveform analyser={previewAnalyser} playing={previewPlaying} height={36} />
-            </div>
-          )}
-
-          <BlobAudioPlayer
-            src={previewBlobUrl}
-            isActive={true}
-            onPlay={() => setPreviewPlaying(true)}
-            onStop={() => { setPreviewPlaying(false); setPreviewAnalyser(null); }}
-            onEnded={() => { setPreviewPlaying(false); setPreviewAnalyser(null); }}
-            fx={fxOptions}
-            muted={false}
-            onAnalyser={setPreviewAnalyser}
-          />
-
-          <div className="flex items-center gap-2 pt-1">
-            <div className="flex border border-border">
-              <button
-                onClick={() => setSendMode("raw")}
-                disabled={isBusy}
-                className={`text-[8px] font-mono uppercase tracking-widest px-3 py-1.5 transition-colors ${sendMode === "raw" ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                RAW
-              </button>
-              <button
-                onClick={() => setSendMode("baked")}
-                disabled={isBusy}
-                className={`text-[8px] font-mono uppercase tracking-widest px-3 py-1.5 border-l border-border transition-colors ${sendMode === "baked" ? "bg-[var(--depth-red)]/10 text-[var(--depth-red)]" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                BAKED
-              </button>
-            </div>
-            <span className="text-[7px] font-mono text-muted-foreground/50 tracking-wider">
-              {sendMode === "baked" ? "fx chain rendered into file" : "fx applied live on playback"}
-            </span>
-          </div>
-          <div className="flex gap-2 items-center pt-1">
-            <input
-              type="text"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="caption (optional)..."
-              className="flex-1 bg-background border-b border-border px-2 py-2 focus:outline-none focus:border-[var(--depth-blue)] font-mono text-sm transition-colors"
-              disabled={isBusy}
-            />
-            <button
-              onClick={() => { if (capturedAudio) uploadAndSend(capturedAudio); }}
-              disabled={isBusy}
-              className="flex items-center gap-2 px-5 py-2 border border-foreground text-foreground font-medium tracking-widest text-xs uppercase hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
-            >
-              {isBusy ? (
-                <span className="animate-pulse">{sendMode === "baked" ? "rendering..." : "..."}</span>
-              ) : (
-                <>
-                  <Send className="w-3.5 h-3.5" />
-                  Send
-                </>
-              )}
-            </button>
-            <button
-              onClick={clearCaptures}
-              disabled={isBusy}
-              className="px-4 py-2 border border-destructive/50 text-destructive text-xs font-mono uppercase hover:bg-destructive/10 transition-colors disabled:opacity-30"
-            >
-              Discard
-            </button>
-          </div>
+      {capturedAudio && !isRecording && (
+        <div className="shrink-0 mb-4 border border-border bg-card flex items-center gap-3 px-3 py-2">
+          <span className="w-2 h-2 rounded-full shrink-0 bg-muted-foreground" />
+          <span className="text-xs font-mono text-muted-foreground flex-1 lowercase">voice ready</span>
+          <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
-      {mediaMode !== "preview" && (
-        <div className="shrink-0 bg-card border border-border p-2">
-          {isPeripheral ? (
-            <div className="p-4 text-center text-xs uppercase tracking-widest text-muted-foreground opacity-40 lowercase">
-              observation only
-            </div>
-          ) : (
-            <form onSubmit={handleSendText} className="flex gap-2 items-center">
+      <div className="shrink-0 bg-card border border-border p-2">
+        {isPeripheral ? (
+          <div className="p-4 text-center text-xs uppercase tracking-widest text-muted-foreground opacity-40 lowercase">
+            observation only
+          </div>
+        ) : (
+          <form onSubmit={handleSendText} className="flex gap-2 items-center">
+            {!hasPending && (
               <button
                 type="button"
                 onClick={isRecording && mediaMode === "recording" ? stopRecording : startRecording}
@@ -1363,32 +915,32 @@ export default function Room() {
               >
                 {isRecording && mediaMode === "recording" ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
               </button>
-              <input
-                type="text"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="speak..."
-                className="flex-1 bg-background border-none px-4 py-3 focus:outline-none font-mono text-sm"
-                disabled={isBusy}
-              />
-              <button
-                type="submit"
-                disabled={!content.trim() || isBusy}
-                className="flex items-center gap-2 px-5 py-3 border border-foreground text-foreground font-medium tracking-widest text-xs uppercase hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
-              >
-                {isBusy ? (
-                  <span className="animate-pulse">...</span>
-                ) : (
-                  <>
-                    <Send className="w-3.5 h-3.5" />
-                    Send
-                  </>
-                )}
-              </button>
-            </form>
-          )}
-        </div>
-      )}
+            )}
+            <input
+              type="text"
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={hasPending ? "caption (optional)..." : "speak..."}
+              className="flex-1 bg-background border-none px-4 py-3 focus:outline-none font-mono text-sm"
+              disabled={isBusy}
+            />
+            <button
+              type="submit"
+              disabled={(!content.trim() && !hasPending) || isBusy}
+              className="flex items-center gap-2 px-5 py-3 border border-foreground text-foreground font-medium tracking-widest text-xs uppercase hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
+            >
+              {isBusy ? (
+                <span className="animate-pulse">...</span>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5" />
+                  Send
+                </>
+              )}
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

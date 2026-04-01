@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, pgEnum, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { cohortsTable } from "./cohorts";
@@ -21,9 +21,7 @@ export const roomMembersTable = pgTable("room_members", {
   roomId: integer("room_id").notNull().references(() => roomsTable.id),
   userId: integer("user_id").notNull().references(() => usersTable.id),
   maskedLabel: text("masked_label"),
-}, (table) => [
-  uniqueIndex("room_members_room_user_idx").on(table.roomId, table.userId),
-]);
+});
 
 export const insertRoomSchema = createInsertSchema(roomsTable).omit({ id: true });
 export const insertRoomMemberSchema = createInsertSchema(roomMembersTable).omit({ id: true });

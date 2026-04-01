@@ -1,8 +1,0 @@
-uploads = []
-generated = []
-
-[[outputs]]
-id = "ivPgx-Ly66E-_W7yoFyqm"
-uri = "file://host-app-source-export.txt"
-type = "text"
-title = "Host App — Complete Source Code"

@@ -27,7 +27,6 @@ import type {
   CreateChannelRequest,
   CreateInstructionRequest,
   DeleteMessage200,
-  DeleteRoom200,
   ErrorResponse,
   GetRoomMessagesParams,
   HealthStatus,
@@ -1135,90 +1134,6 @@ export const useCreateChannel = <
   TContext
 > => {
   return useMutation(getCreateChannelMutationOptions(options));
-};
-
-/**
- * @summary Delete a room (creator or admin only)
- */
-export const getDeleteRoomUrl = (roomId: number) => {
-  return `/api/rooms/${roomId}`;
-};
-
-export const deleteRoom = async (
-  roomId: number,
-  options?: RequestInit,
-): Promise<DeleteRoom200> => {
-  return customFetch<DeleteRoom200>(getDeleteRoomUrl(roomId), {
-    ...options,
-    method: "DELETE",
-  });
-};
-
-export const getDeleteRoomMutationOptions = <
-  TError = ErrorType<ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteRoom>>,
-    TError,
-    { roomId: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof deleteRoom>>,
-  TError,
-  { roomId: number },
-  TContext
-> => {
-  const mutationKey = ["deleteRoom"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof deleteRoom>>,
-    { roomId: number }
-  > = (props) => {
-    const { roomId } = props ?? {};
-
-    return deleteRoom(roomId, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type DeleteRoomMutationResult = NonNullable<
-  Awaited<ReturnType<typeof deleteRoom>>
->;
-
-export type DeleteRoomMutationError = ErrorType<ErrorResponse>;
-
-/**
- * @summary Delete a room (creator or admin only)
- */
-export const useDeleteRoom = <
-  TError = ErrorType<ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof deleteRoom>>,
-    TError,
-    { roomId: number },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof deleteRoom>>,
-  TError,
-  { roomId: number },
-  TContext
-> => {
-  return useMutation(getDeleteRoomMutationOptions(options));
 };
 
 /**
