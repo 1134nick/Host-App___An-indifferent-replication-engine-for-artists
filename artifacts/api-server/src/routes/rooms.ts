@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, roomsTable, roomMembersTable, messagesTable, messageReactionsTable, cohortRolesTable } from "@workspace/db";
-import { eq, and, desc, sql, max, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, max, inArray, ne, gte, isNotNull } from "drizzle-orm";
 import { generateMaskedLabel } from "../lib/cohort-engine";
 import { requireAuth } from "../lib/auth";
 
@@ -130,6 +130,79 @@ router.post("/", requireAuth, async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error creating channel");
     res.status(500).json({ error: "internal_error", message: "Failed to create channel" });
+  }
+});
+
+router.get("/:roomId/presence", requireAuth, async (req, res) => {
+  const roomId = parseInt(String(req.params.roomId));
+  if (isNaN(roomId)) { res.status(400).json({ error: "validation_error", message: "Invalid room ID" }); return; }
+
+  try {
+    const [membership] = await db.select()
+      .from(roomMembersTable)
+      .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)))
+      .limit(1);
+
+    if (!membership) { res.status(403).json({ error: "forbidden", message: "No access to this room" }); return; }
+
+    const cutoff = new Date(Date.now() - 60_000);
+    const rows = await db.select({
+      maskedLabel: roomMembersTable.maskedLabel,
+      lastActiveAt: roomMembersTable.lastActiveAt,
+      lastTypingAt: roomMembersTable.lastTypingAt,
+    })
+      .from(roomMembersTable)
+      .where(and(
+        eq(roomMembersTable.roomId, roomId),
+        ne(roomMembersTable.userId, req.session.userId!),
+        isNotNull(roomMembersTable.maskedLabel),
+        isNotNull(roomMembersTable.lastActiveAt),
+        gte(roomMembersTable.lastActiveAt, cutoff),
+      ));
+
+    const typingCutoff = Date.now() - 6_000;
+    const result = rows
+      .filter((r) => r.maskedLabel && r.lastActiveAt)
+      .map((r) => ({
+        maskedLabel: r.maskedLabel as string,
+        lastActiveAt: r.lastActiveAt as Date,
+        isTyping: !!(r.lastTypingAt && r.lastTypingAt.getTime() >= typingCutoff),
+      }));
+
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "Error fetching presence");
+    res.status(500).json({ error: "internal_error", message: "Failed to fetch presence" });
+  }
+});
+
+router.post("/:roomId/presence/heartbeat", requireAuth, async (req, res) => {
+  const roomId = parseInt(String(req.params.roomId));
+  if (isNaN(roomId)) { res.status(400).json({ error: "validation_error", message: "Invalid room ID" }); return; }
+
+  const { typing } = (req.body ?? {}) as { typing?: boolean | null };
+
+  try {
+    const [membership] = await db.select()
+      .from(roomMembersTable)
+      .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)))
+      .limit(1);
+
+    if (!membership) { res.status(403).json({ error: "forbidden", message: "No access to this room" }); return; }
+
+    const now = new Date();
+    const updates: { lastActiveAt: Date; lastTypingAt?: Date; maskedLabel?: string } = { lastActiveAt: now };
+    if (typing === true) updates.lastTypingAt = now;
+    if (!membership.maskedLabel) updates.maskedLabel = generateMaskedLabel();
+
+    await db.update(roomMembersTable)
+      .set(updates)
+      .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)));
+
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error recording presence heartbeat");
+    res.status(500).json({ error: "internal_error", message: "Failed to record presence" });
   }
 });
 

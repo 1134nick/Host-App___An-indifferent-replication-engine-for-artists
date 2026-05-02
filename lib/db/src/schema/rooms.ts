@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, pgEnum, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { cohortsTable } from "./cohorts";
@@ -21,6 +21,8 @@ export const roomMembersTable = pgTable("room_members", {
   roomId: integer("room_id").notNull().references(() => roomsTable.id),
   userId: integer("user_id").notNull().references(() => usersTable.id),
   maskedLabel: text("masked_label"),
+  lastActiveAt: timestamp("last_active_at"),
+  lastTypingAt: timestamp("last_typing_at"),
 });
 
 export const insertRoomSchema = createInsertSchema(roomsTable).omit({ id: true });

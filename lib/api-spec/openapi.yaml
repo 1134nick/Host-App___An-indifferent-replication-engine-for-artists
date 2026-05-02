@@ -315,6 +315,67 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /rooms/{roomId}/presence:
+    get:
+      operationId: getRoomPresence
+      tags: [rooms]
+      summary: Get currently active members in a room
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of active members (excluding the caller)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PresenceEntry"
+        "403":
+          description: No access to this room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /rooms/{roomId}/presence/heartbeat:
+    post:
+      operationId: sendPresenceHeartbeat
+      tags: [rooms]
+      summary: Mark current user as active (and optionally typing) in a room
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresenceHeartbeatRequest"
+      responses:
+        "200":
+          description: Heartbeat recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "403":
+          description: No access to this room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /rooms/{roomId}/messages:
     get:
       operationId: getRoomMessages
@@ -952,6 +1013,28 @@ components:
         - glyph
         - mine
         - createdAt
+
+    PresenceEntry:
+      type: object
+      properties:
+        maskedLabel:
+          type: string
+        lastActiveAt:
+          type: string
+          format: date-time
+        isTyping:
+          type: boolean
+      required:
+        - maskedLabel
+        - lastActiveAt
+        - isTyping
+
+    PresenceHeartbeatRequest:
+      type: object
+      properties:
+        typing:
+          type: boolean
+          nullable: true
 
     AddReactionRequest:
       type: object

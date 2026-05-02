@@ -204,6 +204,35 @@ export const CreateChannelBody = zod.object({
 });
 
 /**
+ * @summary Get currently active members in a room
+ */
+export const GetRoomPresenceParams = zod.object({
+  roomId: zod.coerce.number(),
+});
+
+export const GetRoomPresenceResponseItem = zod.object({
+  maskedLabel: zod.string(),
+  lastActiveAt: zod.date(),
+  isTyping: zod.boolean(),
+});
+export const GetRoomPresenceResponse = zod.array(GetRoomPresenceResponseItem);
+
+/**
+ * @summary Mark current user as active (and optionally typing) in a room
+ */
+export const SendPresenceHeartbeatParams = zod.object({
+  roomId: zod.coerce.number(),
+});
+
+export const SendPresenceHeartbeatBody = zod.object({
+  typing: zod.boolean().nullish(),
+});
+
+export const SendPresenceHeartbeatResponse = zod.object({
+  success: zod.boolean().optional(),
+});
+
+/**
  * @summary Get messages in a room
  */
 export const GetRoomMessagesParams = zod.object({

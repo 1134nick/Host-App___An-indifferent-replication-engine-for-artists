@@ -36,12 +36,15 @@ import type {
   Message,
   MessageReaction,
   MessageResponse,
+  PresenceEntry,
+  PresenceHeartbeatRequest,
   RegisterRequest,
   RemoveMessageReaction200,
   RequestUploadUrlRequest,
   RequestUploadUrlResponse,
   Room,
   SendMessageRequest,
+  SendPresenceHeartbeat200,
   User,
   UserRole,
 } from "./api.schemas";
@@ -1137,6 +1140,184 @@ export const useCreateChannel = <
   TContext
 > => {
   return useMutation(getCreateChannelMutationOptions(options));
+};
+
+/**
+ * @summary Get currently active members in a room
+ */
+export const getGetRoomPresenceUrl = (roomId: number) => {
+  return `/api/rooms/${roomId}/presence`;
+};
+
+export const getRoomPresence = async (
+  roomId: number,
+  options?: RequestInit,
+): Promise<PresenceEntry[]> => {
+  return customFetch<PresenceEntry[]>(getGetRoomPresenceUrl(roomId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRoomPresenceQueryKey = (roomId: number) => {
+  return [`/api/rooms/${roomId}/presence`] as const;
+};
+
+export const getGetRoomPresenceQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRoomPresence>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  roomId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getRoomPresence>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetRoomPresenceQueryKey(roomId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getRoomPresence>>> = ({
+    signal,
+  }) => getRoomPresence(roomId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!roomId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getRoomPresence>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetRoomPresenceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRoomPresence>>
+>;
+export type GetRoomPresenceQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get currently active members in a room
+ */
+
+export function useGetRoomPresence<
+  TData = Awaited<ReturnType<typeof getRoomPresence>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  roomId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getRoomPresence>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRoomPresenceQueryOptions(roomId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Mark current user as active (and optionally typing) in a room
+ */
+export const getSendPresenceHeartbeatUrl = (roomId: number) => {
+  return `/api/rooms/${roomId}/presence/heartbeat`;
+};
+
+export const sendPresenceHeartbeat = async (
+  roomId: number,
+  presenceHeartbeatRequest?: PresenceHeartbeatRequest,
+  options?: RequestInit,
+): Promise<SendPresenceHeartbeat200> => {
+  return customFetch<SendPresenceHeartbeat200>(
+    getSendPresenceHeartbeatUrl(roomId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(presenceHeartbeatRequest),
+    },
+  );
+};
+
+export const getSendPresenceHeartbeatMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendPresenceHeartbeat>>,
+    TError,
+    { roomId: number; data: BodyType<PresenceHeartbeatRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendPresenceHeartbeat>>,
+  TError,
+  { roomId: number; data: BodyType<PresenceHeartbeatRequest> },
+  TContext
+> => {
+  const mutationKey = ["sendPresenceHeartbeat"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendPresenceHeartbeat>>,
+    { roomId: number; data: BodyType<PresenceHeartbeatRequest> }
+  > = (props) => {
+    const { roomId, data } = props ?? {};
+
+    return sendPresenceHeartbeat(roomId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendPresenceHeartbeatMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendPresenceHeartbeat>>
+>;
+export type SendPresenceHeartbeatMutationBody =
+  BodyType<PresenceHeartbeatRequest>;
+export type SendPresenceHeartbeatMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Mark current user as active (and optionally typing) in a room
+ */
+export const useSendPresenceHeartbeat = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendPresenceHeartbeat>>,
+    TError,
+    { roomId: number; data: BodyType<PresenceHeartbeatRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sendPresenceHeartbeat>>,
+  TError,
+  { roomId: number; data: BodyType<PresenceHeartbeatRequest> },
+  TContext
+> => {
+  return useMutation(getSendPresenceHeartbeatMutationOptions(options));
 };
 
 /**

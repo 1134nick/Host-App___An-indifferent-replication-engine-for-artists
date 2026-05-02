@@ -213,6 +213,16 @@ export interface Message {
   createdAt: string;
 }
 
+export interface PresenceEntry {
+  maskedLabel: string;
+  lastActiveAt: string;
+  isTyping: boolean;
+}
+
+export interface PresenceHeartbeatRequest {
+  typing?: boolean | null;
+}
+
 export interface AddReactionRequest {
   glyph: string;
 }
@@ -274,6 +284,10 @@ export interface AdminStats {
   openCohortApplicants: number;
   spotsToFill: number;
 }
+
+export type SendPresenceHeartbeat200 = {
+  success?: boolean;
+};
 
 export type GetRoomMessagesParams = {
   limit?: number;

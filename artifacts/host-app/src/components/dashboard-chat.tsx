@@ -5,9 +5,13 @@ import {
   useRequestUploadUrl,
   useAddMessageReaction,
   useRemoveMessageReaction,
+  useGetRoomPresence,
+  useSendPresenceHeartbeat,
   getGetRoomMessagesQueryKey,
+  getGetRoomPresenceQueryKey,
   type Message,
   type MessageReaction,
+  type PresenceEntry,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -92,6 +96,11 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
   const requestUploadUrl = useRequestUploadUrl();
   const addReaction = useAddMessageReaction();
   const removeReaction = useRemoveMessageReaction();
+  const { mutateAsync: presenceHeartbeatMutate } = useSendPresenceHeartbeat();
+  const presenceQueryKey = useMemo(() => getGetRoomPresenceQueryKey(roomId), [roomId]);
+  const { data: presenceData } = useGetRoomPresence(roomId, {
+    query: { queryKey: presenceQueryKey, refetchInterval: 4000 },
+  });
   const qc = useQueryClient();
 
   const [composer, setComposer] = useState<Composer>("idle");
@@ -146,6 +155,36 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
   }, []);
 
   const triggerFault = useCallback(() => setFault((f) => f + 1), []);
+
+  // Presence heartbeat: send a non-typing heartbeat every ~20s to mark this user as active.
+  // A separate `markTyping` helper is debounced to avoid hammering the server while typing.
+  // We route the mutation through a ref so the effect below only runs once per roomId
+  // change rather than re-running on every mutation state update (which would cause a loop).
+  const lastTypingHeartbeatRef = useRef<number>(0);
+  const heartbeatMutateRef = useRef(presenceHeartbeatMutate);
+  useEffect(() => {
+    heartbeatMutateRef.current = presenceHeartbeatMutate;
+  }, [presenceHeartbeatMutate]);
+
+  const sendHeartbeat = useCallback(
+    (typing: boolean) => {
+      heartbeatMutateRef.current({ roomId, data: { typing } }).catch(() => {});
+    },
+    [roomId],
+  );
+
+  useEffect(() => {
+    sendHeartbeat(false);
+    const id = setInterval(() => sendHeartbeat(false), 20_000);
+    return () => clearInterval(id);
+  }, [sendHeartbeat]);
+
+  const markTyping = useCallback(() => {
+    const now = performance.now();
+    if (now - lastTypingHeartbeatRef.current < 2500) return;
+    lastTypingHeartbeatRef.current = now;
+    sendHeartbeat(true);
+  }, [sendHeartbeat]);
 
   const recentMessages = useMemo(() => {
     if (!messages) return [];
@@ -550,6 +589,8 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         {myMaskedLabel || "—"}
       </div>
 
+      <PresenceRim presence={presenceData ?? []} palette={palette} />
+
       <div className="absolute inset-0 z-10 pointer-events-none">
         <AnimatePresence>
           {positionedMessages.map(({ message: m, cx, cy, ageRatio }) => {
@@ -675,6 +716,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
             onStopRecording={stopRecording}
             onCancelRecording={cancelRecording}
             replyActive={replyTargetMessage !== null}
+            onTyping={markTyping}
           />
           <ComposerNode
             active={composer === "record"}
@@ -823,6 +865,7 @@ function CenterField({
   onStopRecording,
   onCancelRecording,
   replyActive,
+  onTyping,
 }: {
   text: string;
   setText: (v: string) => void;
@@ -839,6 +882,7 @@ function CenterField({
   onStopRecording: () => void;
   onCancelRecording: () => void;
   replyActive: boolean;
+  onTyping: () => void;
 }) {
   return (
     <div
@@ -877,7 +921,7 @@ function CenterField({
           type="url"
           autoFocus
           value={linkUrl}
-          onChange={(e) => setLinkUrl(e.target.value)}
+          onChange={(e) => { setLinkUrl(e.target.value); onTyping(); }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -893,7 +937,7 @@ function CenterField({
         <input
           type="text"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => { setText(e.target.value); onTyping(); }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -1189,6 +1233,74 @@ function ReactionOrbit({
                 ×{r.count}
               </span>
             )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PresenceRim({
+  presence,
+  palette,
+}: {
+  presence: PresenceEntry[];
+  palette: { a: string; b: string; c: string };
+}) {
+  if (!presence || presence.length === 0) return null;
+
+  const now = Date.now();
+  const entries = presence
+    .slice()
+    .sort((a, b) => a.maskedLabel.localeCompare(b.maskedLabel))
+    .slice(0, 16);
+
+  return (
+    <div className="absolute inset-0 z-[18] pointer-events-none">
+      {entries.map((p, i) => {
+        const total = entries.length;
+        const angle = (i / total) * Math.PI * 2 - Math.PI / 2;
+        const rx = 47;
+        const ry = 44;
+        const cx = 50 + Math.cos(angle) * rx;
+        const cy = 50 + Math.sin(angle) * ry;
+        const lastActive = typeof p.lastActiveAt === "string"
+          ? new Date(p.lastActiveAt).getTime()
+          : (p.lastActiveAt as unknown as Date).getTime();
+        const ageMs = Math.max(0, now - lastActive);
+        const idleRatio = Math.min(1, ageMs / 60_000);
+        const baseOpacity = 0.25 + (1 - idleRatio) * 0.45;
+        const opacity = p.isTyping ? 1 : baseOpacity;
+        const tint = p.isTyping ? palette.a : palette.b;
+        const dotColor = p.isTyping ? palette.a : "#cccccc";
+        const glow = p.isTyping
+          ? `0 0 10px ${palette.a}, 0 0 20px ${palette.b}`
+          : `0 0 4px ${palette.b}66`;
+        return (
+          <div
+            key={p.maskedLabel}
+            className="absolute font-mono text-[9px] tracking-[0.25em] uppercase whitespace-nowrap"
+            style={{
+              left: `${cx}%`,
+              top: `${cy}%`,
+              transform: "translate(-50%, -50%)",
+              opacity,
+              color: tint,
+              textShadow: glow,
+              transition: "opacity 600ms ease, color 400ms ease, text-shadow 400ms ease",
+            }}
+          >
+            <span
+              className="inline-block align-middle mr-1 rounded-full"
+              style={{
+                width: 6,
+                height: 6,
+                background: dotColor,
+                boxShadow: p.isTyping ? `0 0 6px ${palette.a}` : "none",
+                animation: p.isTyping ? "dchat-pulse 0.9s ease-in-out infinite" : "none",
+              }}
+            />
+            {p.maskedLabel}
           </div>
         );
       })}
