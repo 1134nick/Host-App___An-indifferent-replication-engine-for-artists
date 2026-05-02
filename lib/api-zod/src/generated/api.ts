@@ -192,6 +192,7 @@ export const GetMyRoomsResponseItem = zod.object({
   displayName: zod.string().nullish(),
   channelNumber: zod.number().nullish(),
   createdByUserId: zod.number().nullish(),
+  myMaskedLabel: zod.string().nullish(),
 });
 export const GetMyRoomsResponse = zod.array(GetMyRoomsResponseItem);
 
@@ -224,7 +225,7 @@ export const GetRoomMessagesResponseItem = zod.object({
   content: zod.string().nullish(),
   isSystemMessage: zod.boolean(),
   maskedSenderLabel: zod.string().nullish(),
-  mediaType: zod.enum(["image", "audio", "video"]).nullish(),
+  mediaType: zod.enum(["image", "audio", "video", "link"]).nullish(),
   mediaUrl: zod.string().nullish(),
   createdAt: zod.date(),
 });
@@ -239,7 +240,7 @@ export const SendMessageParams = zod.object({
 
 export const SendMessageBody = zod.object({
   content: zod.string().nullish(),
-  mediaType: zod.enum(["image", "audio", "video"]).nullish(),
+  mediaType: zod.enum(["image", "audio", "video", "link"]).nullish(),
   mediaUrl: zod.string().nullish(),
 });
 

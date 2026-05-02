@@ -14,4 +14,5 @@ export const MessageMediaType = {
   image: "image",
   audio: "audio",
   video: "video",
+  link: "link",
 } as const;

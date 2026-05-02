@@ -779,6 +779,9 @@ components:
         createdByUserId:
           type: integer
           nullable: true
+        myMaskedLabel:
+          type: string
+          nullable: true
       required:
         - id
         - cohortId
@@ -807,7 +810,7 @@ components:
         mediaType:
           type: string
           nullable: true
-          enum: [image, audio, video]
+          enum: [image, audio, video, link]
         mediaUrl:
           type: string
           nullable: true
@@ -829,7 +832,7 @@ components:
         mediaType:
           type: string
           nullable: true
-          enum: [image, audio, video]
+          enum: [image, audio, video, link]
         mediaUrl:
           type: string
           nullable: true

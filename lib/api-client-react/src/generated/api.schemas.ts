@@ -162,6 +162,7 @@ export interface Room {
   displayName?: string | null;
   channelNumber?: number | null;
   createdByUserId?: number | null;
+  myMaskedLabel?: string | null;
 }
 
 export type MessageMediaType =
@@ -172,6 +173,7 @@ export const MessageMediaType = {
   image: "image",
   audio: "audio",
   video: "video",
+  link: "link",
 } as const;
 
 export interface Message {
@@ -194,6 +196,7 @@ export const SendMessageRequestMediaType = {
   image: "image",
   audio: "audio",
   video: "video",
+  link: "link",
 } as const;
 
 export interface SendMessageRequest {

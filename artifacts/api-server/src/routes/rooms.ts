@@ -24,9 +24,30 @@ router.get("/", requireAuth, async (req, res) => {
         const [{ count }] = await db.select({ count: sql<number>`count(*)` })
           .from(roomMembersTable)
           .where(eq(roomMembersTable.roomId, roomId));
+        const [myMembership] = await db.select({ maskedLabel: roomMembersTable.maskedLabel })
+          .from(roomMembersTable)
+          .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)))
+          .limit(1);
+        let myMaskedLabel = myMembership?.maskedLabel ?? null;
+        if (!myMaskedLabel) {
+          const candidate = generateMaskedLabel();
+          await db.update(roomMembersTable)
+            .set({ maskedLabel: candidate })
+            .where(and(
+              eq(roomMembersTable.roomId, roomId),
+              eq(roomMembersTable.userId, req.session.userId!),
+              sql`${roomMembersTable.maskedLabel} IS NULL`,
+            ));
+          const [refreshed] = await db.select({ maskedLabel: roomMembersTable.maskedLabel })
+            .from(roomMembersTable)
+            .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)))
+            .limit(1);
+          myMaskedLabel = refreshed?.maskedLabel ?? candidate;
+        }
         rooms.push({
           ...room,
           memberCount: Number(count),
+          myMaskedLabel,
         });
       }
     }
@@ -143,9 +164,42 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
   }
 
   // Validate mediaType if provided
-  if (mediaType && !["image", "audio", "video"].includes(mediaType)) {
-    res.status(400).json({ error: "validation_error", message: "mediaType must be image, audio, or video" });
+  if (mediaType && !["image", "audio", "video", "link"].includes(mediaType)) {
+    res.status(400).json({ error: "validation_error", message: "mediaType must be image, audio, video, or link" });
     return;
+  }
+
+  if (mediaType === "link") {
+    if (typeof mediaUrl !== "string" || !/^https:\/\//i.test(mediaUrl)) {
+      res.status(400).json({ error: "validation_error", message: "Link mediaUrl must be a valid https URL" });
+      return;
+    }
+    try {
+      const parsed = new URL(mediaUrl);
+      if (parsed.protocol !== "https:") {
+        res.status(400).json({ error: "validation_error", message: "Link must use https" });
+        return;
+      }
+      const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+      const allowed = new Set([
+        "spotify.com",
+        "open.spotify.com",
+        "youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtu.be",
+        "soundcloud.com",
+        "m.soundcloud.com",
+        "on.soundcloud.com",
+      ]);
+      if (!allowed.has(host)) {
+        res.status(400).json({ error: "validation_error", message: "Link must be from Spotify, YouTube, or SoundCloud" });
+        return;
+      }
+    } catch {
+      res.status(400).json({ error: "validation_error", message: "Invalid URL" });
+      return;
+    }
   }
 
   try {

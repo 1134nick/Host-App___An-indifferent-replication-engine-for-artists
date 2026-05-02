@@ -4,6 +4,7 @@ import { Lock, MessageSquare, Plus } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import DashboardChat from "../components/dashboard-chat";
 
 export default function Dashboard() {
   const { data: role, isLoading: roleLoading } = useGetMyRole({ query: { retry: false } });
@@ -62,6 +63,15 @@ export default function Dashboard() {
           <span className="bg-card px-3 py-1 border border-border text-muted-foreground">Cohort {role.cohortNumber}</span>
         </div>
       </header>
+
+      {generalRoom && (
+        <div className="mb-10">
+          <DashboardChat
+            roomId={generalRoom.id}
+            myMaskedLabel={generalRoom.myMaskedLabel ?? null}
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
