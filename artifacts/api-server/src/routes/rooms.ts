@@ -169,6 +169,13 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
     return;
   }
 
+  if (mediaType === "audio") {
+    if (typeof mediaUrl !== "string" || !mediaUrl.startsWith("/objects/")) {
+      res.status(400).json({ error: "validation_error", message: "Audio mediaUrl must reference an uploaded object" });
+      return;
+    }
+  }
+
   if (mediaType === "link") {
     if (typeof mediaUrl !== "string" || !/^https:\/\//i.test(mediaUrl)) {
       res.status(400).json({ error: "validation_error", message: "Link mediaUrl must be a valid https URL" });

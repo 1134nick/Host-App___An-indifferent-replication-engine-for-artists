@@ -3,6 +3,8 @@ import {
   useGetRoomMessages,
   useSendMessage,
   useRequestUploadUrl,
+  getGetRoomMessagesQueryKey,
+  type Message,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -65,11 +67,14 @@ interface DashboardChatProps {
 type Composer = "idle" | "link" | "file" | "record";
 
 export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatProps) {
-  const { data: messages } = useGetRoomMessages(
-    roomId,
-    { limit: 40 },
-    { query: { refetchInterval: 2500 } },
+  const messagesParams = useMemo(() => ({ limit: 40 }), []);
+  const messagesQueryKey = useMemo(
+    () => getGetRoomMessagesQueryKey(roomId, messagesParams),
+    [roomId, messagesParams],
   );
+  const { data: messages } = useGetRoomMessages(roomId, messagesParams, {
+    query: { queryKey: messagesQueryKey, refetchInterval: 2500 },
+  });
   const sendMessage = useSendMessage();
   const requestUploadUrl = useRequestUploadUrl();
   const qc = useQueryClient();
@@ -94,7 +99,6 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
 
   const palette = PALETTES[paletteIdx];
 
-  // Drift palette slowly (interval, not per-frame, to avoid re-render storm)
   useEffect(() => {
     const id = setInterval(() => {
       setHue((h) => (h + 1) % 360);
@@ -102,7 +106,6 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
     return () => clearInterval(id);
   }, []);
 
-  // Palette shift on activity (every N messages)
   const lastIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (!messages || messages.length === 0) return;
@@ -151,13 +154,13 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
       await sendMessage.mutateAsync({ roomId, data: { content: text } });
       setText("");
       setComposer("idle");
-      qc.invalidateQueries({ queryKey: [`/api/rooms/${roomId}/messages`] });
+      qc.invalidateQueries({ queryKey: messagesQueryKey });
     } catch {
       triggerFault();
     } finally {
       setBusy(false);
     }
-  }, [text, busy, sendMessage, roomId, qc, triggerStrobe, triggerFault]);
+  }, [text, busy, sendMessage, roomId, qc, messagesQueryKey, triggerStrobe, triggerFault]);
 
   const sendLink = useCallback(async () => {
     const url = linkUrl.trim();
@@ -177,13 +180,13 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
       setLinkUrl("");
       setText("");
       setComposer("idle");
-      qc.invalidateQueries({ queryKey: [`/api/rooms/${roomId}/messages`] });
+      qc.invalidateQueries({ queryKey: messagesQueryKey });
     } catch {
       triggerFault();
     } finally {
       setBusy(false);
     }
-  }, [linkUrl, text, busy, sendMessage, roomId, qc, triggerStrobe, triggerFault]);
+  }, [linkUrl, text, busy, sendMessage, roomId, qc, messagesQueryKey, triggerStrobe, triggerFault]);
 
   const uploadAndSend = useCallback(
     async (blob: Blob, mime: string, ext: string) => {
@@ -209,23 +212,34 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         });
         setText("");
         setComposer("idle");
-        qc.invalidateQueries({ queryKey: [`/api/rooms/${roomId}/messages`] });
+        qc.invalidateQueries({ queryKey: messagesQueryKey });
       } catch {
         triggerFault();
       } finally {
         setBusy(false);
       }
     },
-    [requestUploadUrl, sendMessage, roomId, text, qc, triggerStrobe, triggerFault],
+    [requestUploadUrl, sendMessage, roomId, text, qc, messagesQueryKey, triggerStrobe, triggerFault],
   );
 
   const handleFile = useCallback(
     async (file: File) => {
-      const mime = file.type || "audio/mpeg";
-      const ext = file.name.split(".").pop() || "mp3";
+      const lowerName = file.name.toLowerCase();
+      const isMp3 = file.type === "audio/mpeg" || lowerName.endsWith(".mp3");
+      const isWav =
+        file.type === "audio/wav" ||
+        file.type === "audio/x-wav" ||
+        file.type === "audio/wave" ||
+        lowerName.endsWith(".wav");
+      if (!isMp3 && !isWav) {
+        triggerFault();
+        return;
+      }
+      const mime = isMp3 ? "audio/mpeg" : "audio/wav";
+      const ext = isMp3 ? "mp3" : "wav";
       await uploadAndSend(file, mime, ext);
     },
-    [uploadAndSend],
+    [uploadAndSend, triggerFault],
   );
 
   const startRecording = useCallback(async () => {
@@ -240,7 +254,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
       const recorder = supported ? new MediaRecorder(stream, { mimeType: supported }) : new MediaRecorder(stream);
       const actualMime = recorder.mimeType || supported || "audio/webm";
       mediaRecorderRef.current = recorder;
-      recorder.ondataavailable = (e) => {
+      recorder.ondataavailable = (e: BlobEvent) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = () => {
@@ -269,19 +283,21 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
 
   const cancelRecording = useCallback(() => {
     chunksRef.current = [];
-    if (mediaRecorderRef.current?.state === "recording") {
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state === "recording") {
       try {
-        mediaRecorderRef.current.ondataavailable = null as any;
-        mediaRecorderRef.current.onstop = null as any;
-        mediaRecorderRef.current.stop();
-      } catch {}
+        rec.ondataavailable = () => {};
+        rec.onstop = () => {};
+        rec.stop();
+      } catch {
+        // recorder already torn down
+      }
     }
     cleanupRecorder();
     setRecording(false);
     setComposer("idle");
   }, [cleanupRecorder]);
 
-  // Strobe overlay flash
   const flashKey = strobe;
 
   return (
@@ -295,11 +311,9 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
       }}
       onMouseMove={triggerStrobe}
     >
-      {/* CRT scanlines + chromatic noise */}
       <div className="dchat-scanlines pointer-events-none absolute inset-0" />
       <div className="dchat-noise pointer-events-none absolute inset-0" />
 
-      {/* Chromatic gradient mesh background */}
       <svg
         className="absolute inset-0 w-full h-full pointer-events-none"
         viewBox="0 0 1000 620"
@@ -337,7 +351,6 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
           </filter>
         </defs>
 
-        {/* diagonal wedges converging on pinch point */}
         <g style={{ transformOrigin: "500px 340px", transform: `rotate(${(hue / 6).toFixed(1)}deg)` }} filter="url(#dchat-warp)">
           <polygon points="0,0 1000,0 500,340" fill="url(#dchat-wedge-a)" opacity="0.55" />
           <polygon points="1000,0 1000,620 500,340" fill="url(#dchat-wedge-b)" opacity="0.55" />
@@ -345,7 +358,6 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
           <polygon points="0,0 0,620 500,340" fill="url(#dchat-wedge-a)" opacity="0.55" />
         </g>
 
-        {/* central pinch glow */}
         <circle cx="500" cy="340" r="220" fill="url(#dchat-pinch)" filter="url(#dchat-blur)" />
         <circle cx="500" cy="340" r="60" fill={palette.a} opacity="0.25" filter="url(#dchat-blur)" />
         <circle cx="500" cy="340" r="14" fill="#fff" opacity="0.85">
@@ -354,7 +366,6 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         </circle>
       </svg>
 
-      {/* Strobe flash overlay */}
       <AnimatePresence>
         <motion.div
           key={flashKey}
@@ -370,7 +381,6 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         />
       </AnimatePresence>
 
-      {/* Fault flash — red chromatic glitch on errors */}
       <AnimatePresence>
         <motion.div
           key={`fault-${fault}`}
@@ -387,20 +397,18 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         />
       </AnimatePresence>
 
-      {/* Self-label glyph (top right) */}
       <div className="absolute top-3 right-4 z-20 font-mono text-[10px] tracking-[0.3em] uppercase select-none"
         style={{ color: palette.a, textShadow: `0 0 8px ${palette.a}, 0 0 18px ${palette.b}` }}>
         {myMaskedLabel || "—"}
       </div>
 
-      {/* Metabolizing message field */}
       <div className="absolute inset-0 z-10 pointer-events-none">
         <AnimatePresence>
           {recentMessages.map((m, i) => {
             const total = recentMessages.length;
-            const ageRatio = (total - 1 - i) / Math.max(total - 1, 1); // 0 = newest, 1 = oldest
+            const ageRatio = (total - 1 - i) / Math.max(total - 1, 1);
             const angle = (i / Math.max(total, 1)) * Math.PI * 2 + (hue * Math.PI) / 180;
-            const radius = 38 + ageRatio * 18; // older drift toward center
+            const radius = 38 + ageRatio * 18;
             const cx = 50 + Math.cos(angle) * radius;
             const cy = 50 + Math.sin(angle) * (radius * 0.55);
             const isOwn = m.maskedSenderLabel === myMaskedLabel;
@@ -437,7 +445,6 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         </AnimatePresence>
       </div>
 
-      {/* Composer node ring (bottom) */}
       <div className="absolute left-0 right-0 bottom-4 z-30 flex justify-center pointer-events-none">
         <div className="pointer-events-auto flex items-end gap-3">
           <ComposerNode
@@ -500,7 +507,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
       <input
         ref={fileInputRef}
         type="file"
-        accept="audio/*"
+        accept="audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
@@ -714,7 +721,7 @@ function MessageNode({
   hue,
   ageRatio,
 }: {
-  message: any;
+  message: Message;
   isOwn: boolean;
   palette: { a: string; b: string; c: string };
   hue: number;

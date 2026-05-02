@@ -1,4 +1,4 @@
-import { useGetMyRole, useGetMyRooms, useCreateChannel } from "@workspace/api-client-react";
+import { useGetMyRole, useGetMyRooms, useCreateChannel, getGetMyRoleQueryKey } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
 import { Plus, Radio, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 export default function Stations() {
-  const { data: role, isLoading: roleLoading } = useGetMyRole({ query: { retry: false } });
+  const { data: role, isLoading: roleLoading } = useGetMyRole({ query: { queryKey: getGetMyRoleQueryKey(), retry: false } });
   const { data: rooms, isLoading: roomsLoading } = useGetMyRooms();
   const [, setLocation] = useLocation();
   const createChannel = useCreateChannel();

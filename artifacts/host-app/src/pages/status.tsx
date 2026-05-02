@@ -1,11 +1,11 @@
-import { useGetMyApplication, useGetMyRole } from "@workspace/api-client-react";
+import { useGetMyApplication, useGetMyRole, getGetMyApplicationQueryKey, getGetMyRoleQueryKey } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 
 export default function Status() {
-  const { data: application, isLoading: appLoading } = useGetMyApplication({ query: { retry: false } });
-  const { data: role, isLoading: roleLoading } = useGetMyRole({ query: { retry: false } });
+  const { data: application, isLoading: appLoading } = useGetMyApplication({ query: { queryKey: getGetMyApplicationQueryKey(), retry: false } });
+  const { data: role, isLoading: roleLoading } = useGetMyRole({ query: { queryKey: getGetMyRoleQueryKey(), retry: false } });
   const [, setLocation] = useLocation();
 
   useEffect(() => {

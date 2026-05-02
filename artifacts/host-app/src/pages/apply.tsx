@@ -2,7 +2,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuth } from "@/hooks/use-auth";
-import { useSubmitApplication, useGetMyApplication } from "@workspace/api-client-react";
+import { useSubmitApplication, useGetMyApplication, getGetMyApplicationQueryKey } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { useEffect } from "react";
@@ -17,7 +17,7 @@ type ApplicationInput = z.infer<typeof applicationInputSchema>;
 export default function Apply() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
-  const { data: existingApp, isLoading: appLoading } = useGetMyApplication({ query: { retry: false } });
+  const { data: existingApp, isLoading: appLoading } = useGetMyApplication({ query: { queryKey: getGetMyApplicationQueryKey(), retry: false } });
   const submitApp = useSubmitApplication();
 
   useEffect(() => {

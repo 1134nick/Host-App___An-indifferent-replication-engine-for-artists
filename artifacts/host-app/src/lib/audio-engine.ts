@@ -49,7 +49,7 @@ export function createEchoNode(
   const distortion = ac.createWaveShaper();
   const amt = opts.distortionAmount ?? 0;
   if (amt > 0) {
-    distortion.curve = makeDistortionCurve(amt);
+    distortion.curve = makeDistortionCurve(amt) as Float32Array<ArrayBuffer>;
     distortion.oversample = "4x";
   }
 

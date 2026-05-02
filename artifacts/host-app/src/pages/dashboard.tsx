@@ -1,4 +1,4 @@
-import { useGetMyRole, useGetMyRooms, useGetMyInstructions, useCreateChannel } from "@workspace/api-client-react";
+import { useGetMyRole, useGetMyRooms, useGetMyInstructions, useCreateChannel, getGetMyRoleQueryKey } from "@workspace/api-client-react";
 import { Link, useLocation } from "wouter";
 import { Lock, MessageSquare, Plus } from "lucide-react";
 import { motion } from "framer-motion";
@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import DashboardChat from "../components/dashboard-chat";
 
 export default function Dashboard() {
-  const { data: role, isLoading: roleLoading } = useGetMyRole({ query: { retry: false } });
+  const { data: role, isLoading: roleLoading } = useGetMyRole({ query: { queryKey: getGetMyRoleQueryKey(), retry: false } });
   const { data: rooms, isLoading: roomsLoading } = useGetMyRooms();
   const { data: instructions } = useGetMyInstructions();
   const [, setLocation] = useLocation();

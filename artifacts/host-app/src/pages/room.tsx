@@ -7,6 +7,7 @@ import {
   useRequestUploadUrl,
   useDeleteMessage,
   useGetMe,
+  getGetRoomMessagesQueryKey,
 } from "@workspace/api-client-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -296,7 +297,7 @@ export default function Room() {
   const roomId = parseInt(id || "0", 10);
 
   const { data: messages, isLoading } = useGetRoomMessages(roomId, { limit: 100 }, {
-    query: { refetchInterval: 3000 },
+    query: { queryKey: getGetRoomMessagesQueryKey(roomId, { limit: 100 }), refetchInterval: 3000 },
   });
   const { data: role } = useGetMyRole();
   const { data: me } = useGetMe();
