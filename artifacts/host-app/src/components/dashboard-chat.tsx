@@ -123,6 +123,23 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
 
   const palette = PALETTES[paletteIdx];
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const update = () => setContainerWidth(el.clientWidth);
+    update();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const narrow = containerWidth > 0 && containerWidth < 600;
+
   useEffect(() => {
     const id = setInterval(() => {
       setHue((h) => (h + 1) % 360);
@@ -194,15 +211,27 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
   // Compute positions for each message so we can draw tether lines for replies
   const positionedMessages = useMemo<PositionedMessage[]>(() => {
     const total = recentMessages.length;
+    const yCenter = narrow ? 36 : 50;
+    const yScale = narrow ? 0.32 : 0.55;
+    const xRadiusBase = narrow ? 22 : 38;
+    const xRadiusGrowth = narrow ? 10 : 18;
+    // Clamp horizontal placement so message cards (max ~220px when narrow)
+    // don't get clipped by the root's overflow-hidden at the side edges.
+    const halfCardPct = narrow && containerWidth > 0
+      ? Math.min(45, (110 / containerWidth) * 100)
+      : 0;
+    const xMin = narrow ? halfCardPct : 0;
+    const xMax = narrow ? 100 - halfCardPct : 100;
     return recentMessages.map((m, i) => {
       const ageRatio = (total - 1 - i) / Math.max(total - 1, 1);
       const angle = (i / Math.max(total, 1)) * Math.PI * 2 + (hue * Math.PI) / 180;
-      const radius = 38 + ageRatio * 18;
-      const cx = 50 + Math.cos(angle) * radius;
-      const cy = 50 + Math.sin(angle) * (radius * 0.55);
+      const radius = xRadiusBase + ageRatio * xRadiusGrowth;
+      let cx = 50 + Math.cos(angle) * radius;
+      const cy = yCenter + Math.sin(angle) * (radius * yScale);
+      if (narrow) cx = Math.max(xMin, Math.min(xMax, cx));
       return { message: m, cx, cy, ageRatio };
     });
-  }, [recentMessages, hue]);
+  }, [recentMessages, hue, narrow, containerWidth]);
 
   const positionById = useMemo(() => {
     const m = new Map<number, PositionedMessage>();
@@ -456,9 +485,10 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
 
   return (
     <div
+      ref={rootRef}
       className="dchat-root relative w-full overflow-hidden"
       style={{
-        height: 620,
+        height: narrow ? 520 : 620,
         background: `radial-gradient(ellipse at 50% 60%, hsl(${(hue + 240) % 360} 100% 6%) 0%, #000 70%)`,
         border: "1px solid rgba(255,255,255,0.08)",
         boxShadow: `inset 0 0 120px hsl(${hue} 100% 30% / 0.35)`,
@@ -614,7 +644,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
                   left: `${cx}%`,
                   top: `${cy}%`,
                   transform: "translate(-50%, -50%)",
-                  maxWidth: 280,
+                  maxWidth: narrow ? Math.min(220, Math.max(160, containerWidth - 80)) : 280,
                   zIndex: isReactionTarget || isReplyTarget ? 25 : 15,
                 }}
               >
@@ -623,6 +653,8 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
                   isOwn={isOwn}
                   palette={palette}
                   hue={hue}
+                  narrow={narrow}
+                  containerWidth={containerWidth}
                   ageRatio={ageRatio}
                   isReplyTarget={isReplyTarget}
                   isReactionTarget={isReactionTarget}
@@ -649,7 +681,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         </AnimatePresence>
       </div>
 
-      <div className="absolute left-0 right-0 bottom-4 z-30 flex flex-col items-center gap-2 pointer-events-none">
+      <div className={`absolute left-0 right-0 ${narrow ? "bottom-2 px-2" : "bottom-4"} z-30 flex flex-col items-center gap-2 pointer-events-none`}>
         {replyTargetMessage && (
           <div
             className="pointer-events-auto px-3 py-1 font-mono text-[10px] uppercase tracking-[0.25em] flex items-center gap-3"
@@ -659,11 +691,11 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
               border: `1px solid ${palette.b}`,
               borderRadius: 999,
               boxShadow: `0 0 10px ${palette.b}66`,
-              maxWidth: 480,
+              maxWidth: narrow ? containerWidth - 24 : 480,
             }}
           >
             <span style={{ color: palette.a }}>↪ tether</span>
-            <span className="truncate" style={{ maxWidth: 320, color: "#f5f0e8" }}>
+            <span className="truncate" style={{ maxWidth: narrow ? 180 : 320, color: "#f5f0e8" }}>
               {(replyTargetMessage.maskedSenderLabel || "—").replace(/-/g, "·")}
               {replyTargetMessage.content ? ` :: ${replyTargetMessage.content}` : ""}
             </span>
@@ -678,10 +710,12 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
             </button>
           </div>
         )}
-        <div className="pointer-events-auto flex items-end gap-3">
+        <div className={`pointer-events-auto flex items-end ${narrow ? "gap-1.5 w-full" : "gap-3"}`}>
           <ComposerNode
             active={composer === "file"}
             palette={palette}
+            narrow={narrow}
+            label="upload audio"
             onClick={() => {
               triggerStrobe();
               setComposer("file");
@@ -693,6 +727,8 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
           <ComposerNode
             active={composer === "link"}
             palette={palette}
+            narrow={narrow}
+            label="share link"
             onClick={() => {
               triggerStrobe();
               setComposer((c) => (c === "link" ? "idle" : "link"));
@@ -717,10 +753,13 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
             onCancelRecording={cancelRecording}
             replyActive={replyTargetMessage !== null}
             onTyping={markTyping}
+            narrow={narrow}
           />
           <ComposerNode
             active={composer === "record"}
             palette={palette}
+            narrow={narrow}
+            label={recording ? "stop recording" : "record audio"}
             onClick={() => {
               triggerStrobe();
               if (composer === "record" && recording) {
@@ -790,6 +829,8 @@ function ComposerNode({
   shape,
   glyph,
   pulsing,
+  narrow,
+  label,
 }: {
   active: boolean;
   palette: { a: string; b: string; c: string };
@@ -797,25 +838,33 @@ function ComposerNode({
   shape: "blob1" | "blob2" | "blob3";
   glyph: string;
   pulsing?: boolean;
+  narrow?: boolean;
+  label?: string;
 }) {
   const blobPaths: Record<string, string> = {
     blob1: "M30,5 C50,2 70,12 78,30 C86,48 80,72 60,78 C40,84 14,76 8,56 C2,36 10,8 30,5 Z",
     blob2: "M40,4 C66,4 84,22 82,46 C80,70 60,84 36,82 C12,80 0,58 6,34 C12,10 22,4 40,4 Z",
     blob3: "M44,6 C70,10 88,32 80,56 C72,80 44,86 22,76 C0,66 -2,38 14,18 C24,6 32,4 44,6 Z",
   };
+  const size = narrow ? 48 : 64;
   return (
     <button
       onClick={onClick}
-      className={`relative ${pulsing ? "dchat-pulse" : ""}`}
+      type="button"
+      aria-label={label ?? shape}
+      className={`relative shrink-0 ${pulsing ? "dchat-pulse" : ""}`}
       style={{
-        width: 64,
-        height: 64,
+        width: size,
+        height: size,
+        minWidth: 44,
+        minHeight: 44,
         background: "transparent",
         border: "none",
         cursor: "pointer",
+        touchAction: "manipulation",
       }}
     >
-      <svg viewBox="0 0 88 88" width="64" height="64">
+      <svg viewBox="0 0 88 88" width={size} height={size}>
         <defs>
           <radialGradient id={`grad-${shape}`} cx="40%" cy="40%" r="80%">
             <stop offset="0%" stopColor={palette.a} stopOpacity={active ? 1 : 0.85} />
@@ -866,6 +915,7 @@ function CenterField({
   onCancelRecording,
   replyActive,
   onTyping,
+  narrow,
 }: {
   text: string;
   setText: (v: string) => void;
@@ -883,13 +933,14 @@ function CenterField({
   onCancelRecording: () => void;
   replyActive: boolean;
   onTyping: () => void;
+  narrow?: boolean;
 }) {
   return (
     <div
-      className="relative px-2 py-1 flex items-center"
+      className={`relative px-2 py-1 flex items-center ${narrow ? "flex-1 min-w-0" : ""}`}
       style={{
-        minWidth: 360,
-        maxWidth: 480,
+        minWidth: narrow ? 0 : 360,
+        maxWidth: narrow ? "100%" : 480,
         background: "rgba(0,0,0,0.55)",
         backdropFilter: "blur(6px)",
         border: `1px solid ${replyActive ? palette.b : palette.a}`,
@@ -986,6 +1037,8 @@ function MessageNode({
   onToggleReactionPanel,
   onToggleReplyTarget,
   onPickGlyph,
+  narrow,
+  containerWidth,
 }: {
   message: Message;
   isOwn: boolean;
@@ -997,6 +1050,8 @@ function MessageNode({
   onToggleReactionPanel: () => void;
   onToggleReplyTarget: () => void;
   onPickGlyph: (glyph: string) => void;
+  narrow?: boolean;
+  containerWidth?: number;
 }) {
   const tint = isOwn ? palette.a : palette.b;
   const inner = isOwn ? palette.c : palette.a;
@@ -1060,19 +1115,30 @@ function MessageNode({
             }}
           />
         )}
-        {embed && (
-          <div className="mt-1 overflow-hidden rounded" style={{ width: 240 }}>
-            <iframe
-              src={embed.src}
-              width="240"
-              height={embed.provider === "youtube" ? 135 : embed.provider === "spotify" ? 80 : 120}
-              allow="autoplay; encrypted-media; fullscreen"
-              style={{ border: 0, display: "block" }}
-              loading="lazy"
-              sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
-            />
-          </div>
-        )}
+        {embed && (() => {
+          const maxEmbed = narrow
+            ? Math.max(160, Math.min(240, (containerWidth ?? 240) - 80))
+            : 240;
+          const embedHeight =
+            embed.provider === "youtube"
+              ? Math.round(maxEmbed * 9 / 16)
+              : embed.provider === "spotify"
+                ? 80
+                : 120;
+          return (
+            <div className="mt-1 overflow-hidden rounded" style={{ width: "100%", maxWidth: maxEmbed }}>
+              <iframe
+                src={embed.src}
+                width="100%"
+                height={embedHeight}
+                allow="autoplay; encrypted-media; fullscreen"
+                style={{ border: 0, display: "block", width: "100%" }}
+                loading="lazy"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+              />
+            </div>
+          );
+        })()}
         {message.mediaType === "link" && !embed && message.mediaUrl && (
           <a
             href={message.mediaUrl}
