@@ -186,6 +186,15 @@ export const MessageMediaProvider = {
   soundcloud: "soundcloud",
 } as const;
 
+export interface MessageReaction {
+  id: number;
+  messageId: number;
+  glyph: string;
+  maskedSenderLabel?: string | null;
+  mine: boolean;
+  createdAt: string;
+}
+
 export interface Message {
   id: number;
   roomId: number;
@@ -199,7 +208,13 @@ export interface Message {
   mediaMimeType?: string | null;
   mediaDurationMs?: number | null;
   isCapture: boolean;
+  parentMessageId?: number | null;
+  reactions?: MessageReaction[];
   createdAt: string;
+}
+
+export interface AddReactionRequest {
+  glyph: string;
 }
 
 export type SendMessageRequestMediaType =
@@ -220,6 +235,7 @@ export interface SendMessageRequest {
   mediaMimeType?: string | null;
   mediaDurationMs?: number | null;
   isCapture?: boolean | null;
+  parentMessageId?: number | null;
 }
 
 export interface RequestUploadUrlRequest {
@@ -265,5 +281,9 @@ export type GetRoomMessagesParams = {
 };
 
 export type DeleteMessage200 = {
+  success?: boolean;
+};
+
+export type RemoveMessageReaction200 = {
   success?: boolean;
 };

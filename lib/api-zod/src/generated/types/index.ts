@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./addReactionRequest";
 export * from "./adminStats";
 export * from "./application";
 export * from "./applicationRequest";
@@ -26,8 +27,10 @@ export * from "./loginRequest";
 export * from "./message";
 export * from "./messageMediaProvider";
 export * from "./messageMediaType";
+export * from "./messageReaction";
 export * from "./messageResponse";
 export * from "./registerRequest";
+export * from "./removeMessageReaction200";
 export * from "./requestUploadUrlRequest";
 export * from "./requestUploadUrlResponse";
 export * from "./room";

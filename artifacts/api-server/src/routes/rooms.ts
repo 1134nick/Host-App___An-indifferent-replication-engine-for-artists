@@ -1,10 +1,21 @@
 import { Router } from "express";
-import { db, roomsTable, roomMembersTable, messagesTable, cohortRolesTable } from "@workspace/db";
-import { eq, and, desc, sql, max } from "drizzle-orm";
+import { db, roomsTable, roomMembersTable, messagesTable, messageReactionsTable, cohortRolesTable } from "@workspace/db";
+import { eq, and, desc, sql, max, inArray } from "drizzle-orm";
 import { generateMaskedLabel } from "../lib/cohort-engine";
 import { requireAuth } from "../lib/auth";
 
 const router = Router();
+
+const ALLOWED_REACTION_GLYPHS = new Set([
+  "✦",
+  "✧",
+  "❂",
+  "☼",
+  "▲",
+  "◉",
+  "✺",
+  "⌬",
+]);
 
 router.get("/", requireAuth, async (req, res) => {
   try {
@@ -144,7 +155,43 @@ router.get("/:roomId/messages", requireAuth, async (req, res) => {
       .limit(limit)
       .offset(offset);
 
-    res.json(messages.reverse());
+    const ordered = messages.reverse();
+
+    let reactionsByMessage: Record<number, Array<{
+      id: number;
+      messageId: number;
+      glyph: string;
+      maskedSenderLabel: string | null;
+      mine: boolean;
+      createdAt: Date;
+    }>> = {};
+
+    if (ordered.length > 0) {
+      const ids = ordered.map((m) => m.id);
+      const reactions = await db.select()
+        .from(messageReactionsTable)
+        .where(inArray(messageReactionsTable.messageId, ids));
+
+      reactionsByMessage = reactions.reduce<typeof reactionsByMessage>((acc, r) => {
+        const list = acc[r.messageId] ?? (acc[r.messageId] = []);
+        list.push({
+          id: r.id,
+          messageId: r.messageId,
+          glyph: r.glyph,
+          maskedSenderLabel: r.maskedSenderLabel,
+          mine: r.userId === req.session.userId,
+          createdAt: r.createdAt,
+        });
+        return acc;
+      }, {});
+    }
+
+    const enriched = ordered.map((m) => ({
+      ...m,
+      reactions: reactionsByMessage[m.id] ?? [],
+    }));
+
+    res.json(enriched);
   } catch (err) {
     req.log.error({ err }, "Error fetching messages");
     res.status(500).json({ error: "internal_error", message: "Failed to fetch messages" });
@@ -155,13 +202,14 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
   const roomId = parseInt(String(req.params.roomId));
   if (isNaN(roomId)) { res.status(400).json({ error: "validation_error", message: "Invalid room ID" }); return; }
 
-  const { content, mediaType, mediaUrl, mediaMimeType, mediaDurationMs, isCapture } = req.body as {
+  const { content, mediaType, mediaUrl, mediaMimeType, mediaDurationMs, isCapture, parentMessageId } = req.body as {
     content?: string;
     mediaType?: string;
     mediaUrl?: string;
     mediaMimeType?: string;
     mediaDurationMs?: number;
     isCapture?: boolean;
+    parentMessageId?: number | null;
   };
 
   if (!content?.trim() && !mediaUrl) {
@@ -172,6 +220,13 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
   if (mediaType && !["image", "audio", "video", "link"].includes(mediaType)) {
     res.status(400).json({ error: "validation_error", message: "mediaType must be image, audio, video, or link" });
     return;
+  }
+
+  if (parentMessageId !== undefined && parentMessageId !== null) {
+    if (typeof parentMessageId !== "number" || !Number.isInteger(parentMessageId) || parentMessageId <= 0) {
+      res.status(400).json({ error: "validation_error", message: "parentMessageId must be a positive integer" });
+      return;
+    }
   }
 
   const ALLOWED_AUDIO_MIME = new Set([
@@ -263,6 +318,19 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
       membership.maskedLabel = label;
     }
 
+    let validatedParentId: number | null = null;
+    if (typeof parentMessageId === "number") {
+      const [parent] = await db.select({ id: messagesTable.id, roomId: messagesTable.roomId })
+        .from(messagesTable)
+        .where(eq(messagesTable.id, parentMessageId))
+        .limit(1);
+      if (!parent || parent.roomId !== roomId) {
+        res.status(400).json({ error: "validation_error", message: "parentMessageId does not reference a message in this room" });
+        return;
+      }
+      validatedParentId = parent.id;
+    }
+
     const [message] = await db.insert(messagesTable).values({
       roomId,
       userId: req.session.userId!,
@@ -277,9 +345,10 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
         : null,
       mediaDurationMs: mediaType === "audio" && typeof mediaDurationMs === "number" ? Math.round(mediaDurationMs) : null,
       isCapture: mediaType === "audio" && isCapture === true,
+      parentMessageId: validatedParentId,
     }).returning();
 
-    res.status(201).json(message);
+    res.status(201).json({ ...message, reactions: [] });
   } catch (err) {
     req.log.error({ err }, "Error sending message");
     res.status(500).json({ error: "internal_error", message: "Failed to send message" });
@@ -320,9 +389,8 @@ router.delete("/:roomId/messages/:messageId", requireAuth, async (req, res) => {
       return;
     }
 
-    // Only delete the database row. Media files in object storage are
-    // intentionally preserved forever — audio and video recordings are
-    // never removed from storage even when the message is deleted.
+    // Reactions cascade-delete via FK. The message row itself is removed.
+    // Media files in object storage are intentionally preserved forever.
     await db.delete(messagesTable)
       .where(eq(messagesTable.id, messageId));
 
@@ -330,6 +398,142 @@ router.delete("/:roomId/messages/:messageId", requireAuth, async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error deleting message");
     res.status(500).json({ error: "internal_error", message: "Failed to delete message" });
+  }
+});
+
+router.post("/:roomId/messages/:messageId/reactions", requireAuth, async (req, res) => {
+  const roomId = parseInt(String(req.params.roomId));
+  const messageId = parseInt(String(req.params.messageId));
+  if (isNaN(roomId) || isNaN(messageId)) {
+    res.status(400).json({ error: "validation_error", message: "Invalid IDs" });
+    return;
+  }
+
+  const { glyph } = req.body as { glyph?: string };
+  if (typeof glyph !== "string" || !ALLOWED_REACTION_GLYPHS.has(glyph)) {
+    res.status(400).json({ error: "validation_error", message: "glyph must be one of the allowed reaction glyphs" });
+    return;
+  }
+
+  try {
+    const [membership] = await db.select()
+      .from(roomMembersTable)
+      .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)))
+      .limit(1);
+
+    if (!membership) {
+      res.status(403).json({ error: "forbidden", message: "No access to this room" });
+      return;
+    }
+
+    const [message] = await db.select({ id: messagesTable.id })
+      .from(messagesTable)
+      .where(and(eq(messagesTable.id, messageId), eq(messagesTable.roomId, roomId)))
+      .limit(1);
+
+    if (!message) {
+      res.status(404).json({ error: "not_found", message: "Message not found" });
+      return;
+    }
+
+    // Backfill masked label if missing
+    if (!membership.maskedLabel) {
+      const label = generateMaskedLabel();
+      await db.update(roomMembersTable)
+        .set({ maskedLabel: label })
+        .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)));
+      membership.maskedLabel = label;
+    }
+
+    const [existing] = await db.select()
+      .from(messageReactionsTable)
+      .where(and(
+        eq(messageReactionsTable.messageId, messageId),
+        eq(messageReactionsTable.userId, req.session.userId!),
+        eq(messageReactionsTable.glyph, glyph),
+      ))
+      .limit(1);
+
+    if (existing) {
+      res.status(201).json({
+        id: existing.id,
+        messageId: existing.messageId,
+        glyph: existing.glyph,
+        maskedSenderLabel: existing.maskedSenderLabel,
+        mine: true,
+        createdAt: existing.createdAt,
+      });
+      return;
+    }
+
+    const [reaction] = await db.insert(messageReactionsTable).values({
+      messageId,
+      userId: req.session.userId!,
+      glyph,
+      maskedSenderLabel: membership.maskedLabel,
+    }).returning();
+
+    res.status(201).json({
+      id: reaction.id,
+      messageId: reaction.messageId,
+      glyph: reaction.glyph,
+      maskedSenderLabel: reaction.maskedSenderLabel,
+      mine: true,
+      createdAt: reaction.createdAt,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error adding reaction");
+    res.status(500).json({ error: "internal_error", message: "Failed to add reaction" });
+  }
+});
+
+router.delete("/:roomId/messages/:messageId/reactions/:glyph", requireAuth, async (req, res) => {
+  const roomId = parseInt(String(req.params.roomId));
+  const messageId = parseInt(String(req.params.messageId));
+  const glyph = decodeURIComponent(String(req.params.glyph));
+
+  if (isNaN(roomId) || isNaN(messageId)) {
+    res.status(400).json({ error: "validation_error", message: "Invalid IDs" });
+    return;
+  }
+
+  if (!ALLOWED_REACTION_GLYPHS.has(glyph)) {
+    res.status(400).json({ error: "validation_error", message: "glyph must be one of the allowed reaction glyphs" });
+    return;
+  }
+
+  try {
+    const [membership] = await db.select()
+      .from(roomMembersTable)
+      .where(and(eq(roomMembersTable.roomId, roomId), eq(roomMembersTable.userId, req.session.userId!)))
+      .limit(1);
+
+    if (!membership) {
+      res.status(403).json({ error: "forbidden", message: "No access to this room" });
+      return;
+    }
+
+    const [message] = await db.select({ id: messagesTable.id })
+      .from(messagesTable)
+      .where(and(eq(messagesTable.id, messageId), eq(messagesTable.roomId, roomId)))
+      .limit(1);
+
+    if (!message) {
+      res.status(404).json({ error: "not_found", message: "Message not found in this room" });
+      return;
+    }
+
+    await db.delete(messageReactionsTable)
+      .where(and(
+        eq(messageReactionsTable.messageId, messageId),
+        eq(messageReactionsTable.userId, req.session.userId!),
+        eq(messageReactionsTable.glyph, glyph),
+      ));
+
+    res.json({ success: true });
+  } catch (err) {
+    req.log.error({ err }, "Error removing reaction");
+    res.status(500).json({ error: "internal_error", message: "Failed to remove reaction" });
   }
 });
 

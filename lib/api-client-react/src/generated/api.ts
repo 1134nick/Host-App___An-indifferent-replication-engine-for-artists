@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AddReactionRequest,
   AdminStats,
   Application,
   ApplicationRequest,
@@ -33,8 +34,10 @@ import type {
   Instruction,
   LoginRequest,
   Message,
+  MessageReaction,
   MessageResponse,
   RegisterRequest,
+  RemoveMessageReaction200,
   RequestUploadUrlRequest,
   RequestUploadUrlResponse,
   Room,
@@ -1418,6 +1421,190 @@ export const useDeleteMessage = <
   TContext
 > => {
   return useMutation(getDeleteMessageMutationOptions(options));
+};
+
+/**
+ * @summary Add a reaction glyph to a message
+ */
+export const getAddMessageReactionUrl = (roomId: number, messageId: number) => {
+  return `/api/rooms/${roomId}/messages/${messageId}/reactions`;
+};
+
+export const addMessageReaction = async (
+  roomId: number,
+  messageId: number,
+  addReactionRequest: AddReactionRequest,
+  options?: RequestInit,
+): Promise<MessageReaction> => {
+  return customFetch<MessageReaction>(
+    getAddMessageReactionUrl(roomId, messageId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(addReactionRequest),
+    },
+  );
+};
+
+export const getAddMessageReactionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addMessageReaction>>,
+    TError,
+    { roomId: number; messageId: number; data: BodyType<AddReactionRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addMessageReaction>>,
+  TError,
+  { roomId: number; messageId: number; data: BodyType<AddReactionRequest> },
+  TContext
+> => {
+  const mutationKey = ["addMessageReaction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addMessageReaction>>,
+    { roomId: number; messageId: number; data: BodyType<AddReactionRequest> }
+  > = (props) => {
+    const { roomId, messageId, data } = props ?? {};
+
+    return addMessageReaction(roomId, messageId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddMessageReactionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addMessageReaction>>
+>;
+export type AddMessageReactionMutationBody = BodyType<AddReactionRequest>;
+export type AddMessageReactionMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Add a reaction glyph to a message
+ */
+export const useAddMessageReaction = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addMessageReaction>>,
+    TError,
+    { roomId: number; messageId: number; data: BodyType<AddReactionRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addMessageReaction>>,
+  TError,
+  { roomId: number; messageId: number; data: BodyType<AddReactionRequest> },
+  TContext
+> => {
+  return useMutation(getAddMessageReactionMutationOptions(options));
+};
+
+/**
+ * @summary Remove the current user's reaction glyph from a message
+ */
+export const getRemoveMessageReactionUrl = (
+  roomId: number,
+  messageId: number,
+  glyph: string,
+) => {
+  return `/api/rooms/${roomId}/messages/${messageId}/reactions/${glyph}`;
+};
+
+export const removeMessageReaction = async (
+  roomId: number,
+  messageId: number,
+  glyph: string,
+  options?: RequestInit,
+): Promise<RemoveMessageReaction200> => {
+  return customFetch<RemoveMessageReaction200>(
+    getRemoveMessageReactionUrl(roomId, messageId, glyph),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getRemoveMessageReactionMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeMessageReaction>>,
+    TError,
+    { roomId: number; messageId: number; glyph: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeMessageReaction>>,
+  TError,
+  { roomId: number; messageId: number; glyph: string },
+  TContext
+> => {
+  const mutationKey = ["removeMessageReaction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeMessageReaction>>,
+    { roomId: number; messageId: number; glyph: string }
+  > = (props) => {
+    const { roomId, messageId, glyph } = props ?? {};
+
+    return removeMessageReaction(roomId, messageId, glyph, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveMessageReactionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeMessageReaction>>
+>;
+
+export type RemoveMessageReactionMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Remove the current user's reaction glyph from a message
+ */
+export const useRemoveMessageReaction = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeMessageReaction>>,
+    TError,
+    { roomId: number; messageId: number; glyph: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeMessageReaction>>,
+  TError,
+  { roomId: number; messageId: number; glyph: string },
+  TContext
+> => {
+  return useMutation(getRemoveMessageReactionMutationOptions(options));
 };
 
 /**

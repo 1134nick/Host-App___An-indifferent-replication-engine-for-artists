@@ -420,6 +420,92 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /rooms/{roomId}/messages/{messageId}/reactions:
+    post:
+      operationId: addMessageReaction
+      tags: [messages]
+      summary: Add a reaction glyph to a message
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddReactionRequest"
+      responses:
+        "201":
+          description: Reaction added (or already present)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageReaction"
+        "400":
+          description: Invalid glyph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: No access to this room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Message not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /rooms/{roomId}/messages/{messageId}/reactions/{glyph}:
+    delete:
+      operationId: removeMessageReaction
+      tags: [messages]
+      summary: Remove the current user's reaction glyph from a message
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: glyph
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reaction removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        "403":
+          description: No access to this room
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /instructions:
     get:
       operationId: getMyInstructions
@@ -826,6 +912,13 @@ components:
           nullable: true
         isCapture:
           type: boolean
+        parentMessageId:
+          type: integer
+          nullable: true
+        reactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageReaction"
         createdAt:
           type: string
           format: date-time
@@ -835,6 +928,38 @@ components:
         - isSystemMessage
         - isCapture
         - createdAt
+
+    MessageReaction:
+      type: object
+      properties:
+        id:
+          type: integer
+        messageId:
+          type: integer
+        glyph:
+          type: string
+        maskedSenderLabel:
+          type: string
+          nullable: true
+        mine:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - messageId
+        - glyph
+        - mine
+        - createdAt
+
+    AddReactionRequest:
+      type: object
+      properties:
+        glyph:
+          type: string
+      required:
+        - glyph
 
     SendMessageRequest:
       type: object
@@ -857,6 +982,9 @@ components:
           nullable: true
         isCapture:
           type: boolean
+          nullable: true
+        parentMessageId:
+          type: integer
           nullable: true
 
     RequestUploadUrlRequest:

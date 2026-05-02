@@ -231,6 +231,19 @@ export const GetRoomMessagesResponseItem = zod.object({
   mediaMimeType: zod.string().nullish(),
   mediaDurationMs: zod.number().nullish(),
   isCapture: zod.boolean(),
+  parentMessageId: zod.number().nullish(),
+  reactions: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        messageId: zod.number(),
+        glyph: zod.string(),
+        maskedSenderLabel: zod.string().nullish(),
+        mine: zod.boolean(),
+        createdAt: zod.date(),
+      }),
+    )
+    .optional(),
   createdAt: zod.date(),
 });
 export const GetRoomMessagesResponse = zod.array(GetRoomMessagesResponseItem);
@@ -249,6 +262,7 @@ export const SendMessageBody = zod.object({
   mediaMimeType: zod.string().nullish(),
   mediaDurationMs: zod.number().nullish(),
   isCapture: zod.boolean().nullish(),
+  parentMessageId: zod.number().nullish(),
 });
 
 /**
@@ -260,6 +274,31 @@ export const DeleteMessageParams = zod.object({
 });
 
 export const DeleteMessageResponse = zod.object({
+  success: zod.boolean().optional(),
+});
+
+/**
+ * @summary Add a reaction glyph to a message
+ */
+export const AddMessageReactionParams = zod.object({
+  roomId: zod.coerce.number(),
+  messageId: zod.coerce.number(),
+});
+
+export const AddMessageReactionBody = zod.object({
+  glyph: zod.string(),
+});
+
+/**
+ * @summary Remove the current user's reaction glyph from a message
+ */
+export const RemoveMessageReactionParams = zod.object({
+  roomId: zod.coerce.number(),
+  messageId: zod.coerce.number(),
+  glyph: zod.coerce.string(),
+});
+
+export const RemoveMessageReactionResponse = zod.object({
   success: zod.boolean().optional(),
 });
 

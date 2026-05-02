@@ -7,6 +7,7 @@
  */
 import type { MessageMediaProvider } from "./messageMediaProvider";
 import type { MessageMediaType } from "./messageMediaType";
+import type { MessageReaction } from "./messageReaction";
 
 export interface Message {
   id: number;
@@ -21,5 +22,7 @@ export interface Message {
   mediaMimeType?: string | null;
   mediaDurationMs?: number | null;
   isCapture: boolean;
+  parentMessageId?: number | null;
+  reactions?: MessageReaction[];
   createdAt: Date;
 }

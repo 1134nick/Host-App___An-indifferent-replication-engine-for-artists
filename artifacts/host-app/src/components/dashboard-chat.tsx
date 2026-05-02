@@ -3,14 +3,19 @@ import {
   useGetRoomMessages,
   useSendMessage,
   useRequestUploadUrl,
+  useAddMessageReaction,
+  useRemoveMessageReaction,
   getGetRoomMessagesQueryKey,
   type Message,
+  type MessageReaction,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { createCaptureRecorder, type CaptureRecorder } from "../lib/audio-engine";
 
 type Provider = "spotify" | "youtube" | "soundcloud" | "unknown";
+
+const REACTION_GLYPHS = ["✦", "✧", "❂", "☼", "▲", "◉", "✺", "⌬"];
 
 function detectProvider(url: string): Provider {
   try {
@@ -67,6 +72,13 @@ interface DashboardChatProps {
 
 type Composer = "idle" | "link" | "file" | "record";
 
+interface PositionedMessage {
+  message: Message;
+  cx: number;
+  cy: number;
+  ageRatio: number;
+}
+
 export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatProps) {
   const messagesParams = useMemo(() => ({ limit: 40 }), []);
   const messagesQueryKey = useMemo(
@@ -78,6 +90,8 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
   });
   const sendMessage = useSendMessage();
   const requestUploadUrl = useRequestUploadUrl();
+  const addReaction = useAddMessageReaction();
+  const removeReaction = useRemoveMessageReaction();
   const qc = useQueryClient();
 
   const [composer, setComposer] = useState<Composer>("idle");
@@ -89,6 +103,8 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
   const [hue, setHue] = useState(0);
   const [fault, setFault] = useState(0);
   const lastStrobeRef = useRef(0);
+  const [replyTargetId, setReplyTargetId] = useState<number | null>(null);
+  const [reactionTargetId, setReactionTargetId] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const captureRef = useRef<CaptureRecorder | null>(null);
@@ -136,6 +152,40 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
     return messages.slice(-12);
   }, [messages]);
 
+  // Compute positions for each message so we can draw tether lines for replies
+  const positionedMessages = useMemo<PositionedMessage[]>(() => {
+    const total = recentMessages.length;
+    return recentMessages.map((m, i) => {
+      const ageRatio = (total - 1 - i) / Math.max(total - 1, 1);
+      const angle = (i / Math.max(total, 1)) * Math.PI * 2 + (hue * Math.PI) / 180;
+      const radius = 38 + ageRatio * 18;
+      const cx = 50 + Math.cos(angle) * radius;
+      const cy = 50 + Math.sin(angle) * (radius * 0.55);
+      return { message: m, cx, cy, ageRatio };
+    });
+  }, [recentMessages, hue]);
+
+  const positionById = useMemo(() => {
+    const m = new Map<number, PositionedMessage>();
+    for (const p of positionedMessages) m.set(p.message.id, p);
+    return m;
+  }, [positionedMessages]);
+
+  // Reply target may exist outside the recent visible window — keep it valid only if visible
+  const replyTargetMessage = useMemo(() => {
+    if (replyTargetId == null) return null;
+    return positionById.get(replyTargetId)?.message ?? null;
+  }, [replyTargetId, positionById]);
+
+  useEffect(() => {
+    if (replyTargetId != null && !positionById.has(replyTargetId)) {
+      setReplyTargetId(null);
+    }
+    if (reactionTargetId != null && !positionById.has(reactionTargetId)) {
+      setReactionTargetId(null);
+    }
+  }, [replyTargetId, reactionTargetId, positionById]);
+
   const cleanupRecorder = useCallback(() => {
     if (recordTimerRef.current) clearInterval(recordTimerRef.current);
     recordTimerRef.current = null;
@@ -158,20 +208,29 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
       if (isUrlOnly && urlProvider !== "unknown") {
         await sendMessage.mutateAsync({
           roomId,
-          data: { content: null, mediaType: "link", mediaUrl: trimmed },
+          data: {
+            content: null,
+            mediaType: "link",
+            mediaUrl: trimmed,
+            parentMessageId: replyTargetId ?? null,
+          },
         });
       } else {
-        await sendMessage.mutateAsync({ roomId, data: { content: text } });
+        await sendMessage.mutateAsync({
+          roomId,
+          data: { content: text, parentMessageId: replyTargetId ?? null },
+        });
       }
       setText("");
       setComposer("idle");
+      setReplyTargetId(null);
       qc.invalidateQueries({ queryKey: messagesQueryKey });
     } catch {
       triggerFault();
     } finally {
       setBusy(false);
     }
-  }, [text, busy, sendMessage, roomId, qc, messagesQueryKey, triggerStrobe, triggerFault]);
+  }, [text, busy, sendMessage, roomId, qc, messagesQueryKey, triggerStrobe, triggerFault, replyTargetId]);
 
   const sendLink = useCallback(async () => {
     const url = linkUrl.trim();
@@ -186,18 +245,24 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
     try {
       await sendMessage.mutateAsync({
         roomId,
-        data: { content: text.trim() || null, mediaType: "link", mediaUrl: url },
+        data: {
+          content: text.trim() || null,
+          mediaType: "link",
+          mediaUrl: url,
+          parentMessageId: replyTargetId ?? null,
+        },
       });
       setLinkUrl("");
       setText("");
       setComposer("idle");
+      setReplyTargetId(null);
       qc.invalidateQueries({ queryKey: messagesQueryKey });
     } catch {
       triggerFault();
     } finally {
       setBusy(false);
     }
-  }, [linkUrl, text, busy, sendMessage, roomId, qc, messagesQueryKey, triggerStrobe, triggerFault]);
+  }, [linkUrl, text, busy, sendMessage, roomId, qc, messagesQueryKey, triggerStrobe, triggerFault, replyTargetId]);
 
   const uploadAndSend = useCallback(
     async (
@@ -227,10 +292,12 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
             mediaMimeType: mime,
             mediaDurationMs: opts.durationMs,
             isCapture: opts.isCapture,
+            parentMessageId: replyTargetId ?? null,
           },
         });
         setText("");
         setComposer("idle");
+        setReplyTargetId(null);
         qc.invalidateQueries({ queryKey: messagesQueryKey });
       } catch {
         triggerFault();
@@ -238,7 +305,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         setBusy(false);
       }
     },
-    [requestUploadUrl, sendMessage, roomId, text, qc, messagesQueryKey, triggerStrobe, triggerFault],
+    [requestUploadUrl, sendMessage, roomId, text, qc, messagesQueryKey, triggerStrobe, triggerFault, replyTargetId],
   );
 
   const handleFile = useCallback(
@@ -310,7 +377,43 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
     setComposer("idle");
   }, [cleanupRecorder]);
 
+  const handleToggleReaction = useCallback(
+    async (messageId: number, glyph: string, alreadyMine: boolean) => {
+      triggerStrobe();
+      try {
+        if (alreadyMine) {
+          await removeReaction.mutateAsync({ roomId, messageId, glyph: encodeURIComponent(glyph) });
+        } else {
+          await addReaction.mutateAsync({ roomId, messageId, data: { glyph } });
+        }
+        qc.invalidateQueries({ queryKey: messagesQueryKey });
+      } catch {
+        triggerFault();
+      }
+    },
+    [addReaction, removeReaction, roomId, qc, messagesQueryKey, triggerStrobe, triggerFault],
+  );
+
   const flashKey = strobe;
+
+  // Build SVG reply tether lines from each reply node back to its parent
+  const replyTethers = useMemo(() => {
+    const lines: Array<{ id: number; x1: number; y1: number; x2: number; y2: number }> = [];
+    for (const child of positionedMessages) {
+      const parentId = child.message.parentMessageId;
+      if (parentId == null) continue;
+      const parent = positionById.get(parentId);
+      if (!parent) continue;
+      lines.push({
+        id: child.message.id,
+        x1: child.cx,
+        y1: child.cy,
+        x2: parent.cx,
+        y2: parent.cy,
+      });
+    }
+    return lines;
+  }, [positionedMessages, positionById]);
 
   return (
     <div
@@ -378,6 +481,39 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         </circle>
       </svg>
 
+      {/* Reply tether overlay (percent-based positioning matches message nodes) */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none z-[12]"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+      >
+        {replyTethers.map((t) => (
+          <g key={`tether-${t.id}`}>
+            <line
+              x1={t.x1}
+              y1={t.y1}
+              x2={t.x2}
+              y2={t.y2}
+              stroke={palette.b}
+              strokeWidth="0.35"
+              strokeDasharray="0.8 0.6"
+              opacity="0.85"
+              vectorEffect="non-scaling-stroke"
+              style={{
+                filter: `drop-shadow(0 0 4px ${palette.b}) drop-shadow(0 0 8px ${palette.a})`,
+              }}
+            >
+              <animate
+                attributeName="stroke-dashoffset"
+                values="0;-1.4"
+                dur="1.6s"
+                repeatCount="indefinite"
+              />
+            </line>
+          </g>
+        ))}
+      </svg>
+
       <AnimatePresence>
         <motion.div
           key={flashKey}
@@ -416,15 +552,11 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
 
       <div className="absolute inset-0 z-10 pointer-events-none">
         <AnimatePresence>
-          {recentMessages.map((m, i) => {
-            const total = recentMessages.length;
-            const ageRatio = (total - 1 - i) / Math.max(total - 1, 1);
-            const angle = (i / Math.max(total, 1)) * Math.PI * 2 + (hue * Math.PI) / 180;
-            const radius = 38 + ageRatio * 18;
-            const cx = 50 + Math.cos(angle) * radius;
-            const cy = 50 + Math.sin(angle) * (radius * 0.55);
+          {positionedMessages.map(({ message: m, cx, cy, ageRatio }) => {
             const isOwn = m.maskedSenderLabel === myMaskedLabel;
             const fragmenting = ageRatio > 0.55;
+            const isReplyTarget = m.id === replyTargetId;
+            const isReactionTarget = m.id === reactionTargetId;
             return (
               <motion.div
                 key={m.id}
@@ -442,6 +574,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
                   top: `${cy}%`,
                   transform: "translate(-50%, -50%)",
                   maxWidth: 280,
+                  zIndex: isReactionTarget || isReplyTarget ? 25 : 15,
                 }}
               >
                 <MessageNode
@@ -450,6 +583,24 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
                   palette={palette}
                   hue={hue}
                   ageRatio={ageRatio}
+                  isReplyTarget={isReplyTarget}
+                  isReactionTarget={isReactionTarget}
+                  onToggleReactionPanel={() => {
+                    triggerStrobe();
+                    setReactionTargetId((cur) => (cur === m.id ? null : m.id));
+                  }}
+                  onToggleReplyTarget={() => {
+                    triggerStrobe();
+                    setReplyTargetId((cur) => (cur === m.id ? null : m.id));
+                    setComposer("idle");
+                  }}
+                  onPickGlyph={(glyph) => {
+                    const mine = (m.reactions ?? []).some(
+                      (r) => r.glyph === glyph && r.mine,
+                    );
+                    handleToggleReaction(m.id, glyph, mine);
+                    setReactionTargetId(null);
+                  }}
                 />
               </motion.div>
             );
@@ -457,7 +608,35 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
         </AnimatePresence>
       </div>
 
-      <div className="absolute left-0 right-0 bottom-4 z-30 flex justify-center pointer-events-none">
+      <div className="absolute left-0 right-0 bottom-4 z-30 flex flex-col items-center gap-2 pointer-events-none">
+        {replyTargetMessage && (
+          <div
+            className="pointer-events-auto px-3 py-1 font-mono text-[10px] uppercase tracking-[0.25em] flex items-center gap-3"
+            style={{
+              color: palette.b,
+              background: "rgba(0,0,0,0.65)",
+              border: `1px solid ${palette.b}`,
+              borderRadius: 999,
+              boxShadow: `0 0 10px ${palette.b}66`,
+              maxWidth: 480,
+            }}
+          >
+            <span style={{ color: palette.a }}>↪ tether</span>
+            <span className="truncate" style={{ maxWidth: 320, color: "#f5f0e8" }}>
+              {(replyTargetMessage.maskedSenderLabel || "—").replace(/-/g, "·")}
+              {replyTargetMessage.content ? ` :: ${replyTargetMessage.content}` : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => setReplyTargetId(null)}
+              className="ml-1"
+              style={{ color: palette.b, background: "transparent", border: "none", cursor: "pointer" }}
+              aria-label="cancel reply"
+            >
+              ×
+            </button>
+          </div>
+        )}
         <div className="pointer-events-auto flex items-end gap-3">
           <ComposerNode
             active={composer === "file"}
@@ -495,6 +674,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
             recordSecs={recordSecs}
             onStopRecording={stopRecording}
             onCancelRecording={cancelRecording}
+            replyActive={replyTargetMessage !== null}
           />
           <ComposerNode
             active={composer === "record"}
@@ -642,6 +822,7 @@ function CenterField({
   recordSecs,
   onStopRecording,
   onCancelRecording,
+  replyActive,
 }: {
   text: string;
   setText: (v: string) => void;
@@ -657,6 +838,7 @@ function CenterField({
   recordSecs: number;
   onStopRecording: () => void;
   onCancelRecording: () => void;
+  replyActive: boolean;
 }) {
   return (
     <div
@@ -666,8 +848,10 @@ function CenterField({
         maxWidth: 480,
         background: "rgba(0,0,0,0.55)",
         backdropFilter: "blur(6px)",
-        border: `1px solid ${palette.a}`,
-        boxShadow: `0 0 18px ${palette.b}66, inset 0 0 12px ${palette.c}44`,
+        border: `1px solid ${replyActive ? palette.b : palette.a}`,
+        boxShadow: replyActive
+          ? `0 0 22px ${palette.b}aa, inset 0 0 14px ${palette.b}66`
+          : `0 0 18px ${palette.b}66, inset 0 0 12px ${palette.c}44`,
         borderRadius: 999,
       }}
     >
@@ -726,83 +910,288 @@ function CenterField({
   );
 }
 
+interface AggregatedReaction {
+  glyph: string;
+  count: number;
+  mine: boolean;
+}
+
+function aggregateReactions(reactions: MessageReaction[] | undefined): AggregatedReaction[] {
+  if (!reactions || reactions.length === 0) return [];
+  const map = new Map<string, AggregatedReaction>();
+  for (const r of reactions) {
+    const cur = map.get(r.glyph);
+    if (cur) {
+      cur.count += 1;
+      if (r.mine) cur.mine = true;
+    } else {
+      map.set(r.glyph, { glyph: r.glyph, count: 1, mine: r.mine });
+    }
+  }
+  return Array.from(map.values());
+}
+
 function MessageNode({
   message,
   isOwn,
   palette,
   hue,
   ageRatio,
+  isReplyTarget,
+  isReactionTarget,
+  onToggleReactionPanel,
+  onToggleReplyTarget,
+  onPickGlyph,
 }: {
   message: Message;
   isOwn: boolean;
   palette: { a: string; b: string; c: string };
   hue: number;
   ageRatio: number;
+  isReplyTarget: boolean;
+  isReactionTarget: boolean;
+  onToggleReactionPanel: () => void;
+  onToggleReplyTarget: () => void;
+  onPickGlyph: (glyph: string) => void;
 }) {
   const tint = isOwn ? palette.a : palette.b;
   const inner = isOwn ? palette.c : palette.a;
   const embed = message.mediaType === "link" && message.mediaUrl ? buildEmbed(message.mediaUrl) : null;
   const isAudio = message.mediaType === "audio" && message.mediaUrl;
+  const aggregated = aggregateReactions(message.reactions);
+  const isReply = message.parentMessageId != null;
 
   return (
-    <div
-      className="font-mono text-[11px] leading-snug rounded-2xl px-3 py-2 backdrop-blur"
-      style={{
-        background: `linear-gradient(135deg, ${tint}26 0%, ${inner}33 100%)`,
-        border: `1px solid ${tint}88`,
-        boxShadow: `0 0 12px ${tint}66, inset 0 0 8px ${inner}55`,
-        color: "#f5f0e8",
-        minWidth: 120,
-        textShadow: `0 0 4px ${inner}aa`,
-        transition: "all 250ms",
-        opacity: 1 - ageRatio * 0.15,
-      }}
-    >
-      <div className="flex items-center gap-2 mb-1 opacity-80">
-        <span
-          className="inline-block w-1.5 h-1.5 rounded-full"
-          style={{ background: tint, boxShadow: `0 0 6px ${tint}` }}
-        />
-        <span style={{ color: tint, letterSpacing: "0.15em" }}>
-          {(message.maskedSenderLabel || "—").replace(/-/g, "·")}
-        </span>
+    <div className="relative pointer-events-auto">
+      <div
+        className="font-mono text-[11px] leading-snug rounded-2xl px-3 py-2 backdrop-blur"
+        style={{
+          background: `linear-gradient(135deg, ${tint}26 0%, ${inner}33 100%)`,
+          border: isReplyTarget
+            ? `1px solid #fff`
+            : isReply
+              ? `1px dashed ${palette.b}aa`
+              : `1px solid ${tint}88`,
+          boxShadow: isReplyTarget
+            ? `0 0 18px ${palette.a}, 0 0 32px ${palette.b}, inset 0 0 10px #fff8`
+            : `0 0 12px ${tint}66, inset 0 0 8px ${inner}55`,
+          color: "#f5f0e8",
+          minWidth: 120,
+          textShadow: `0 0 4px ${inner}aa`,
+          transition: "all 250ms",
+          opacity: 1 - ageRatio * 0.15,
+        }}
+      >
+        <div className="flex items-center gap-2 mb-1 opacity-80">
+          <span
+            className="inline-block w-1.5 h-1.5 rounded-full"
+            style={{ background: tint, boxShadow: `0 0 6px ${tint}` }}
+          />
+          <span style={{ color: tint, letterSpacing: "0.15em" }}>
+            {(message.maskedSenderLabel || "—").replace(/-/g, "·")}
+          </span>
+          {isReply && (
+            <span
+              title="reply"
+              style={{
+                color: palette.b,
+                fontSize: 10,
+                letterSpacing: "0.2em",
+                textShadow: `0 0 4px ${palette.b}`,
+              }}
+            >
+              ↪
+            </span>
+          )}
+        </div>
+        {message.content && <div className="break-words">{message.content}</div>}
+        {isAudio && (
+          <audio
+            controls
+            src={`/api/storage${message.mediaUrl}`}
+            className="mt-1 w-full"
+            style={{
+              height: 28,
+              filter: `hue-rotate(${hue.toFixed(0)}deg) saturate(1.6)`,
+            }}
+          />
+        )}
+        {embed && (
+          <div className="mt-1 overflow-hidden rounded" style={{ width: 240 }}>
+            <iframe
+              src={embed.src}
+              width="240"
+              height={embed.provider === "youtube" ? 135 : embed.provider === "spotify" ? 80 : 120}
+              allow="autoplay; encrypted-media; fullscreen"
+              style={{ border: 0, display: "block" }}
+              loading="lazy"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+            />
+          </div>
+        )}
+        {message.mediaType === "link" && !embed && message.mediaUrl && (
+          <a
+            href={message.mediaUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block mt-1 underline truncate"
+            style={{ color: inner }}
+          >
+            {message.mediaUrl}
+          </a>
+        )}
+
+        {/* Action row: react + reply */}
+        <div className="mt-1 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleReactionPanel();
+            }}
+            className="font-mono text-[10px] tracking-widest px-2 py-[2px]"
+            style={{
+              color: isReactionTarget ? "#000" : palette.a,
+              background: isReactionTarget ? palette.a : "transparent",
+              border: `1px solid ${palette.a}`,
+              borderRadius: 999,
+              cursor: "pointer",
+            }}
+            aria-label="react"
+          >
+            ✦+
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleReplyTarget();
+            }}
+            className="font-mono text-[10px] tracking-widest px-2 py-[2px]"
+            style={{
+              color: isReplyTarget ? "#000" : palette.b,
+              background: isReplyTarget ? palette.b : "transparent",
+              border: `1px solid ${palette.b}`,
+              borderRadius: 999,
+              cursor: "pointer",
+            }}
+            aria-label="reply"
+          >
+            ↪
+          </button>
+        </div>
       </div>
-      {message.content && <div className="break-words">{message.content}</div>}
-      {isAudio && (
-        <audio
-          controls
-          src={`/api/storage${message.mediaUrl}`}
-          className="mt-1 w-full"
-          style={{
-            height: 28,
-            filter: `hue-rotate(${hue.toFixed(0)}deg) saturate(1.6)`,
-          }}
+
+      {/* Orbiting reaction micro-nodes */}
+      {aggregated.length > 0 && (
+        <ReactionOrbit
+          reactions={aggregated}
+          palette={palette}
         />
       )}
-      {embed && (
-        <div className="mt-1 overflow-hidden rounded" style={{ width: 240 }}>
-          <iframe
-            src={embed.src}
-            width="240"
-            height={embed.provider === "youtube" ? 135 : embed.provider === "spotify" ? 80 : 120}
-            allow="autoplay; encrypted-media; fullscreen"
-            style={{ border: 0, display: "block" }}
-            loading="lazy"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
-          />
+
+      {/* Reaction picker panel */}
+      {isReactionTarget && (
+        <div
+          className="absolute z-40 flex flex-wrap gap-1 px-2 py-1"
+          style={{
+            top: -42,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(0,0,0,0.85)",
+            border: `1px solid ${palette.a}`,
+            borderRadius: 999,
+            boxShadow: `0 0 14px ${palette.a}, 0 0 28px ${palette.b}66`,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {REACTION_GLYPHS.map((g) => {
+            const mine = (message.reactions ?? []).some((r) => r.glyph === g && r.mine);
+            return (
+              <button
+                key={g}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPickGlyph(g);
+                }}
+                className="font-mono text-sm leading-none px-1.5 py-1"
+                style={{
+                  color: mine ? "#000" : palette.a,
+                  background: mine ? palette.a : "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  textShadow: mine ? "none" : `0 0 6px ${palette.a}`,
+                  borderRadius: 999,
+                }}
+                aria-label={`react ${g}`}
+                aria-pressed={mine}
+              >
+                {g}
+              </button>
+            );
+          })}
         </div>
       )}
-      {message.mediaType === "link" && !embed && message.mediaUrl && (
-        <a
-          href={message.mediaUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block mt-1 underline truncate"
-          style={{ color: inner }}
-        >
-          {message.mediaUrl}
-        </a>
-      )}
+    </div>
+  );
+}
+
+function ReactionOrbit({
+  reactions,
+  palette,
+}: {
+  reactions: AggregatedReaction[];
+  palette: { a: string; b: string; c: string };
+}) {
+  const radius = 38;
+  return (
+    <div
+      className="absolute pointer-events-none"
+      style={{
+        top: "50%",
+        left: "50%",
+        width: 0,
+        height: 0,
+      }}
+    >
+      {reactions.map((r, i) => {
+        const total = reactions.length;
+        const angle = (i / Math.max(total, 1)) * Math.PI * 2;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius * 0.55;
+        const tint = r.mine ? palette.a : palette.c;
+        return (
+          <div
+            key={r.glyph}
+            className="absolute font-mono"
+            style={{
+              left: x,
+              top: y,
+              transform: "translate(-50%, -50%)",
+              fontSize: 12,
+              color: tint,
+              textShadow: `0 0 6px ${tint}, 0 0 12px ${palette.b}`,
+              animation: `dchat-pulse ${1.4 + (i % 3) * 0.3}s ease-in-out infinite`,
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span>{r.glyph}</span>
+            {r.count > 1 && (
+              <span
+                className="ml-0.5"
+                style={{
+                  fontSize: 9,
+                  color: palette.b,
+                  textShadow: `0 0 4px ${palette.b}`,
+                }}
+              >
+                ×{r.count}
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
