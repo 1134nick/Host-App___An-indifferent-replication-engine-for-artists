@@ -227,6 +227,10 @@ export const GetRoomMessagesResponseItem = zod.object({
   maskedSenderLabel: zod.string().nullish(),
   mediaType: zod.enum(["image", "audio", "video", "link"]).nullish(),
   mediaUrl: zod.string().nullish(),
+  mediaProvider: zod.enum(["spotify", "youtube", "soundcloud"]).nullish(),
+  mediaMimeType: zod.string().nullish(),
+  mediaDurationMs: zod.number().nullish(),
+  isCapture: zod.boolean(),
   createdAt: zod.date(),
 });
 export const GetRoomMessagesResponse = zod.array(GetRoomMessagesResponseItem);
@@ -242,6 +246,9 @@ export const SendMessageBody = zod.object({
   content: zod.string().nullish(),
   mediaType: zod.enum(["image", "audio", "video", "link"]).nullish(),
   mediaUrl: zod.string().nullish(),
+  mediaMimeType: zod.string().nullish(),
+  mediaDurationMs: zod.number().nullish(),
+  isCapture: zod.boolean().nullish(),
 });
 
 /**

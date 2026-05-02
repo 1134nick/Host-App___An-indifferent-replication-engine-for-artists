@@ -123,7 +123,7 @@ router.post("/", requireAuth, async (req, res) => {
 });
 
 router.get("/:roomId/messages", requireAuth, async (req, res) => {
-  const roomId = parseInt(req.params.roomId);
+  const roomId = parseInt(String(req.params.roomId));
   if (isNaN(roomId)) { res.status(400).json({ error: "validation_error", message: "Invalid room ID" }); return; }
 
   const limit = parseInt(req.query.limit as string) || 50;
@@ -152,26 +152,53 @@ router.get("/:roomId/messages", requireAuth, async (req, res) => {
 });
 
 router.post("/:roomId/messages", requireAuth, async (req, res) => {
-  const roomId = parseInt(req.params.roomId);
+  const roomId = parseInt(String(req.params.roomId));
   if (isNaN(roomId)) { res.status(400).json({ error: "validation_error", message: "Invalid room ID" }); return; }
 
-  const { content, mediaType, mediaUrl } = req.body;
+  const { content, mediaType, mediaUrl, mediaMimeType, mediaDurationMs, isCapture } = req.body as {
+    content?: string;
+    mediaType?: string;
+    mediaUrl?: string;
+    mediaMimeType?: string;
+    mediaDurationMs?: number;
+    isCapture?: boolean;
+  };
 
-  // Must have either text content or a media attachment
   if (!content?.trim() && !mediaUrl) {
     res.status(400).json({ error: "validation_error", message: "Message must have content or media" });
     return;
   }
 
-  // Validate mediaType if provided
   if (mediaType && !["image", "audio", "video", "link"].includes(mediaType)) {
     res.status(400).json({ error: "validation_error", message: "mediaType must be image, audio, video, or link" });
     return;
   }
 
+  const ALLOWED_AUDIO_MIME = new Set([
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/webm",
+    "audio/ogg",
+    "audio/mp4",
+  ]);
+
+  let mediaProvider: "spotify" | "youtube" | "soundcloud" | null = null;
+  let normalizedMediaUrl: string | null = mediaUrl ?? null;
+
   if (mediaType === "audio") {
     if (typeof mediaUrl !== "string" || !mediaUrl.startsWith("/objects/")) {
       res.status(400).json({ error: "validation_error", message: "Audio mediaUrl must reference an uploaded object" });
+      return;
+    }
+    if (typeof mediaMimeType !== "string" || !ALLOWED_AUDIO_MIME.has(mediaMimeType.toLowerCase())) {
+      res.status(400).json({ error: "validation_error", message: "Audio mediaMimeType is required and must be a supported audio type" });
+      return;
+    }
+    if (mediaDurationMs !== undefined && (typeof mediaDurationMs !== "number" || mediaDurationMs < 0 || mediaDurationMs > 30 * 60 * 1000)) {
+      res.status(400).json({ error: "validation_error", message: "mediaDurationMs out of range" });
       return;
     }
   }
@@ -188,21 +215,25 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
         return;
       }
       const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
-      const allowed = new Set([
-        "spotify.com",
-        "open.spotify.com",
-        "youtube.com",
-        "m.youtube.com",
-        "music.youtube.com",
-        "youtu.be",
-        "soundcloud.com",
-        "m.soundcloud.com",
-        "on.soundcloud.com",
-      ]);
-      if (!allowed.has(host)) {
+      const PROVIDER_HOSTS: Record<string, "spotify" | "youtube" | "soundcloud"> = {
+        "spotify.com": "spotify",
+        "open.spotify.com": "spotify",
+        "youtube.com": "youtube",
+        "m.youtube.com": "youtube",
+        "music.youtube.com": "youtube",
+        "youtu.be": "youtube",
+        "soundcloud.com": "soundcloud",
+        "m.soundcloud.com": "soundcloud",
+        "on.soundcloud.com": "soundcloud",
+      };
+      const matchedProvider = PROVIDER_HOSTS[host];
+      if (!matchedProvider) {
         res.status(400).json({ error: "validation_error", message: "Link must be from Spotify, YouTube, or SoundCloud" });
         return;
       }
+      mediaProvider = matchedProvider;
+      parsed.hash = "";
+      normalizedMediaUrl = parsed.toString();
     } catch {
       res.status(400).json({ error: "validation_error", message: "Invalid URL" });
       return;
@@ -234,7 +265,11 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
       isSystemMessage: false,
       maskedSenderLabel: membership.maskedLabel || "UNKNOWN-ENTITY",
       mediaType: mediaType || null,
-      mediaUrl: mediaUrl || null,
+      mediaUrl: normalizedMediaUrl,
+      mediaProvider,
+      mediaMimeType: mediaType === "audio" ? (mediaMimeType ?? null) : null,
+      mediaDurationMs: mediaType === "audio" && typeof mediaDurationMs === "number" ? Math.round(mediaDurationMs) : null,
+      isCapture: mediaType === "audio" && isCapture === true,
     }).returning();
 
     res.status(201).json(message);
@@ -245,8 +280,8 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
 });
 
 router.delete("/:roomId/messages/:messageId", requireAuth, async (req, res) => {
-  const roomId = parseInt(req.params.roomId);
-  const messageId = parseInt(req.params.messageId);
+  const roomId = parseInt(String(req.params.roomId));
+  const messageId = parseInt(String(req.params.messageId));
   if (isNaN(roomId) || isNaN(messageId)) {
     res.status(400).json({ error: "validation_error", message: "Invalid IDs" });
     return;

@@ -2,7 +2,7 @@ import { useGetMyRole, useGetMyRooms, useGetMyInstructions, useCreateChannel, ge
 import { Link, useLocation } from "wouter";
 import { Lock, MessageSquare, Plus } from "lucide-react";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import DashboardChat from "../components/dashboard-chat";
 
@@ -16,6 +16,12 @@ export default function Dashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const [channelName, setChannelName] = useState("");
 
+  useEffect(() => {
+    if (!roleLoading && !role) {
+      setLocation("/status");
+    }
+  }, [roleLoading, role, setLocation]);
+
   if (roleLoading || roomsLoading) {
     return (
       <div className="flex-1 flex items-center justify-center font-mono text-xs text-muted-foreground">
@@ -25,7 +31,6 @@ export default function Dashboard() {
   }
 
   if (!role) {
-    setLocation("/status");
     return null;
   }
 

@@ -8,6 +8,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
+import { createCaptureRecorder, type CaptureRecorder } from "../lib/audio-engine";
 
 type Provider = "spotify" | "youtube" | "soundcloud" | "unknown";
 
@@ -90,9 +91,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
   const lastStrobeRef = useRef(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<BlobPart[]>([]);
+  const captureRef = useRef<CaptureRecorder | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -138,20 +137,32 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
   }, [messages]);
 
   const cleanupRecorder = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
     if (recordTimerRef.current) clearInterval(recordTimerRef.current);
     recordTimerRef.current = null;
+    if (captureRef.current?.isRecording()) {
+      captureRef.current.cancel();
+    }
+    captureRef.current = null;
   }, []);
 
   useEffect(() => () => cleanupRecorder(), [cleanupRecorder]);
 
   const sendText = useCallback(async () => {
-    if (!text.trim() || busy) return;
+    const trimmed = text.trim();
+    if (!trimmed || busy) return;
+    const isUrlOnly = /^https:\/\/\S+$/i.test(trimmed) && !/\s/.test(trimmed);
+    const urlProvider = isUrlOnly ? detectProvider(trimmed) : "unknown";
     setBusy(true);
     triggerStrobe();
     try {
-      await sendMessage.mutateAsync({ roomId, data: { content: text } });
+      if (isUrlOnly && urlProvider !== "unknown") {
+        await sendMessage.mutateAsync({
+          roomId,
+          data: { content: null, mediaType: "link", mediaUrl: trimmed },
+        });
+      } else {
+        await sendMessage.mutateAsync({ roomId, data: { content: text } });
+      }
       setText("");
       setComposer("idle");
       qc.invalidateQueries({ queryKey: messagesQueryKey });
@@ -189,7 +200,12 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
   }, [linkUrl, text, busy, sendMessage, roomId, qc, messagesQueryKey, triggerStrobe, triggerFault]);
 
   const uploadAndSend = useCallback(
-    async (blob: Blob, mime: string, ext: string) => {
+    async (
+      blob: Blob,
+      mime: string,
+      ext: string,
+      opts: { isCapture: boolean; durationMs?: number },
+    ) => {
       setBusy(true);
       triggerStrobe();
       try {
@@ -208,6 +224,9 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
             content: text.trim() || null,
             mediaType: "audio",
             mediaUrl: urlData.objectPath,
+            mediaMimeType: mime,
+            mediaDurationMs: opts.durationMs,
+            isCapture: opts.isCapture,
           },
         });
         setText("");
@@ -237,7 +256,7 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
       }
       const mime = isMp3 ? "audio/mpeg" : "audio/wav";
       const ext = isMp3 ? "mp3" : "wav";
-      await uploadAndSend(file, mime, ext);
+      await uploadAndSend(file, mime, ext, { isCapture: false });
     },
     [uploadAndSend, triggerFault],
   );
@@ -246,53 +265,46 @@ export default function DashboardChat({ roomId, myMaskedLabel }: DashboardChatPr
     setComposer("record");
     triggerStrobe();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      chunksRef.current = [];
-      const mimeOptions = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-      const supported = mimeOptions.find((m) => MediaRecorder.isTypeSupported(m)) || "";
-      const recorder = supported ? new MediaRecorder(stream, { mimeType: supported }) : new MediaRecorder(stream);
-      const actualMime = recorder.mimeType || supported || "audio/webm";
-      mediaRecorderRef.current = recorder;
-      recorder.ondataavailable = (e: BlobEvent) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: actualMime });
-        cleanupRecorder();
-        setRecording(false);
-        const ext = actualMime.includes("mp4") ? "mp4" : actualMime.includes("ogg") ? "ogg" : "webm";
-        if (blob.size > 0) uploadAndSend(blob, actualMime, ext);
-        else setComposer("idle");
-      };
-      recorder.start(250);
+      const cap = await createCaptureRecorder({ distortionAmount: 6 });
+      captureRef.current = cap;
+      cap.start();
       setRecording(true);
       setRecordSecs(0);
       recordTimerRef.current = setInterval(() => setRecordSecs((s) => s + 1), 1000);
     } catch {
+      cleanupRecorder();
       setComposer("idle");
+      triggerFault();
     }
-  }, [triggerStrobe, cleanupRecorder, uploadAndSend]);
+  }, [triggerStrobe, cleanupRecorder, triggerFault]);
 
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
-    }
+  const stopRecording = useCallback(async () => {
+    const cap = captureRef.current;
     if (recordTimerRef.current) clearInterval(recordTimerRef.current);
-  }, []);
+    recordTimerRef.current = null;
+    if (!cap || !cap.isRecording()) {
+      setRecording(false);
+      return;
+    }
+    try {
+      const { blob, mimeType, durationMs } = await cap.stop();
+      captureRef.current = null;
+      setRecording(false);
+      if (blob.size === 0) {
+        setComposer("idle");
+        return;
+      }
+      const ext = mimeType.includes("mp4") ? "mp4" : mimeType.includes("ogg") ? "ogg" : "webm";
+      await uploadAndSend(blob, mimeType, ext, { isCapture: true, durationMs });
+    } catch {
+      cleanupRecorder();
+      setRecording(false);
+      setComposer("idle");
+      triggerFault();
+    }
+  }, [uploadAndSend, cleanupRecorder, triggerFault]);
 
   const cancelRecording = useCallback(() => {
-    chunksRef.current = [];
-    const rec = mediaRecorderRef.current;
-    if (rec && rec.state === "recording") {
-      try {
-        rec.ondataavailable = () => {};
-        rec.onstop = () => {};
-        rec.stop();
-      } catch {
-        // recorder already torn down
-      }
-    }
     cleanupRecorder();
     setRecording(false);
     setComposer("idle");
@@ -752,7 +764,7 @@ function MessageNode({
           style={{ background: tint, boxShadow: `0 0 6px ${tint}` }}
         />
         <span style={{ color: tint, letterSpacing: "0.15em" }}>
-          {(message.maskedSenderLabel || "—").split("-").slice(0, 2).join("·")}
+          {(message.maskedSenderLabel || "—").replace(/-/g, "·")}
         </span>
       </div>
       {message.content && <div className="break-words">{message.content}</div>}

@@ -176,6 +176,16 @@ export const MessageMediaType = {
   link: "link",
 } as const;
 
+export type MessageMediaProvider =
+  | (typeof MessageMediaProvider)[keyof typeof MessageMediaProvider]
+  | null;
+
+export const MessageMediaProvider = {
+  spotify: "spotify",
+  youtube: "youtube",
+  soundcloud: "soundcloud",
+} as const;
+
 export interface Message {
   id: number;
   roomId: number;
@@ -185,6 +195,10 @@ export interface Message {
   maskedSenderLabel?: string | null;
   mediaType?: MessageMediaType;
   mediaUrl?: string | null;
+  mediaProvider?: MessageMediaProvider;
+  mediaMimeType?: string | null;
+  mediaDurationMs?: number | null;
+  isCapture: boolean;
   createdAt: string;
 }
 
@@ -203,6 +217,9 @@ export interface SendMessageRequest {
   content?: string | null;
   mediaType?: SendMessageRequestMediaType;
   mediaUrl?: string | null;
+  mediaMimeType?: string | null;
+  mediaDurationMs?: number | null;
+  isCapture?: boolean | null;
 }
 
 export interface RequestUploadUrlRequest {

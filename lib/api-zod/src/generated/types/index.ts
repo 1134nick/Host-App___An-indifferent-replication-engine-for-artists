@@ -24,6 +24,7 @@ export * from "./healthStatus";
 export * from "./instruction";
 export * from "./loginRequest";
 export * from "./message";
+export * from "./messageMediaProvider";
 export * from "./messageMediaType";
 export * from "./messageResponse";
 export * from "./registerRequest";

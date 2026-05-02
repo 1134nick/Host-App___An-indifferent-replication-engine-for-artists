@@ -11,4 +11,7 @@ export interface SendMessageRequest {
   content?: string | null;
   mediaType?: SendMessageRequestMediaType;
   mediaUrl?: string | null;
+  mediaMimeType?: string | null;
+  mediaDurationMs?: number | null;
+  isCapture?: boolean | null;
 }

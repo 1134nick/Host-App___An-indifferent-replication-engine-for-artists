@@ -11,8 +11,12 @@ export const messagesTable = pgTable("messages", {
   content: text("content").notNull().default(""),
   isSystemMessage: boolean("is_system_message").notNull().default(false),
   maskedSenderLabel: text("masked_sender_label"),
-  mediaType: text("media_type"), // 'image' | 'audio' | null
-  mediaUrl: text("media_url"),   // objectPath for stored media
+  mediaType: text("media_type"),
+  mediaUrl: text("media_url"),
+  mediaProvider: text("media_provider"),
+  mediaMimeType: text("media_mime_type"),
+  mediaDurationMs: integer("media_duration_ms"),
+  isCapture: boolean("is_capture").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

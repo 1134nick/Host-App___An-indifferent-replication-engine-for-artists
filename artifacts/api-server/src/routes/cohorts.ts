@@ -32,7 +32,7 @@ router.get("/current", async (req, res) => {
 });
 
 router.post("/:cohortId/process", requireAdmin, async (req, res) => {
-  const cohortId = parseInt(req.params.cohortId);
+  const cohortId = parseInt(String(req.params.cohortId));
   if (isNaN(cohortId)) {
     res.status(400).json({ error: "validation_error", message: "Invalid cohort ID" });
     return;

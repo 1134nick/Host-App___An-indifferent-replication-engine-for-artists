@@ -814,6 +814,18 @@ components:
         mediaUrl:
           type: string
           nullable: true
+        mediaProvider:
+          type: string
+          nullable: true
+          enum: [spotify, youtube, soundcloud]
+        mediaMimeType:
+          type: string
+          nullable: true
+        mediaDurationMs:
+          type: integer
+          nullable: true
+        isCapture:
+          type: boolean
         createdAt:
           type: string
           format: date-time
@@ -821,6 +833,7 @@ components:
         - id
         - roomId
         - isSystemMessage
+        - isCapture
         - createdAt
 
     SendMessageRequest:
@@ -835,6 +848,15 @@ components:
           enum: [image, audio, video, link]
         mediaUrl:
           type: string
+          nullable: true
+        mediaMimeType:
+          type: string
+          nullable: true
+        mediaDurationMs:
+          type: integer
+          nullable: true
+        isCapture:
+          type: boolean
           nullable: true
 
     RequestUploadUrlRequest:
