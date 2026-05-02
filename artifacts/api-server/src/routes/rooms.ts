@@ -193,7 +193,12 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
       res.status(400).json({ error: "validation_error", message: "Audio mediaUrl must reference an uploaded object" });
       return;
     }
-    if (typeof mediaMimeType !== "string" || !ALLOWED_AUDIO_MIME.has(mediaMimeType.toLowerCase())) {
+    if (typeof mediaMimeType !== "string") {
+      res.status(400).json({ error: "validation_error", message: "Audio mediaMimeType is required and must be a supported audio type" });
+      return;
+    }
+    const baseMime = mediaMimeType.toLowerCase().split(";")[0].trim();
+    if (!ALLOWED_AUDIO_MIME.has(baseMime)) {
       res.status(400).json({ error: "validation_error", message: "Audio mediaMimeType is required and must be a supported audio type" });
       return;
     }
@@ -267,7 +272,9 @@ router.post("/:roomId/messages", requireAuth, async (req, res) => {
       mediaType: mediaType || null,
       mediaUrl: normalizedMediaUrl,
       mediaProvider,
-      mediaMimeType: mediaType === "audio" ? (mediaMimeType ?? null) : null,
+      mediaMimeType: mediaType === "audio" && typeof mediaMimeType === "string"
+        ? mediaMimeType.toLowerCase().split(";")[0].trim()
+        : null,
       mediaDurationMs: mediaType === "audio" && typeof mediaDurationMs === "number" ? Math.round(mediaDurationMs) : null,
       isCapture: mediaType === "audio" && isCapture === true,
     }).returning();
