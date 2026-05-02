@@ -49,7 +49,7 @@ export function createEchoNode(
   const distortion = ac.createWaveShaper();
   const amt = opts.distortionAmount ?? 0;
   if (amt > 0) {
-    distortion.curve = makeDistortionCurve(amt) as Float32Array<ArrayBuffer>;
+    distortion.curve = makeDistortionCurve(amt);
     distortion.oversample = "4x";
   }
 
@@ -84,101 +84,6 @@ export async function fetchAndDecode(src: string): Promise<AudioBuffer> {
   if (!resp.ok) throw new Error("fetch failed");
   const arrayBuf = await resp.arrayBuffer();
   return ac.decodeAudioData(arrayBuf);
-}
-
-export interface CaptureRecorder {
-  start: () => void;
-  stop: () => Promise<{ blob: Blob; mimeType: string; durationMs: number }>;
-  cancel: () => void;
-  analyser: AnalyserNode;
-  mimeType: string;
-  isRecording: () => boolean;
-}
-
-export async function createCaptureRecorder(opts: {
-  distortionAmount?: number;
-} = {}): Promise<CaptureRecorder> {
-  const ac = getAudioContext();
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const source = ac.createMediaStreamSource(stream);
-
-  const distortion = ac.createWaveShaper();
-  const amt = opts.distortionAmount ?? 0;
-  if (amt > 0) {
-    distortion.curve = makeDistortionCurve(amt) as Float32Array<ArrayBuffer>;
-    distortion.oversample = "4x";
-  }
-
-  const analyser = ac.createAnalyser();
-  analyser.fftSize = 256;
-  analyser.smoothingTimeConstant = 0.6;
-
-  const dest = ac.createMediaStreamDestination();
-
-  source.connect(distortion);
-  distortion.connect(analyser);
-  analyser.connect(dest);
-
-  const mimeOptions = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-  const supported = mimeOptions.find((m) => MediaRecorder.isTypeSupported(m)) || "";
-  const recorder = supported ? new MediaRecorder(dest.stream, { mimeType: supported }) : new MediaRecorder(dest.stream);
-  const mimeType = recorder.mimeType || supported || "audio/webm";
-
-  let chunks: Blob[] = [];
-  let startedAt = 0;
-  let active = false;
-
-  recorder.ondataavailable = (e: BlobEvent) => {
-    if (e.data.size > 0) chunks.push(e.data);
-  };
-
-  const cleanup = () => {
-    try { source.disconnect(); } catch { /* already disconnected */ }
-    try { distortion.disconnect(); } catch { /* already disconnected */ }
-    try { analyser.disconnect(); } catch { /* already disconnected */ }
-    stream.getTracks().forEach((t) => t.stop());
-    active = false;
-  };
-
-  return {
-    analyser,
-    mimeType,
-    isRecording: () => active,
-    start: () => {
-      if (active) return;
-      chunks = [];
-      startedAt = performance.now();
-      recorder.start(250);
-      active = true;
-    },
-    stop: () =>
-      new Promise<{ blob: Blob; mimeType: string; durationMs: number }>((resolve, reject) => {
-        if (!active) {
-          reject(new Error("recorder not active"));
-          return;
-        }
-        recorder.onstop = () => {
-          const blob = new Blob(chunks, { type: mimeType });
-          const durationMs = Math.max(0, Math.round(performance.now() - startedAt));
-          cleanup();
-          resolve({ blob, mimeType, durationMs });
-        };
-        try {
-          recorder.stop();
-        } catch (err) {
-          cleanup();
-          reject(err);
-        }
-      }),
-    cancel: () => {
-      if (recorder.state === "recording") {
-        recorder.onstop = () => { /* discarded */ };
-        try { recorder.stop(); } catch { /* already stopped */ }
-      }
-      chunks = [];
-      cleanup();
-    },
-  };
 }
 
 export function getAnalyserData(analyser: AnalyserNode): {

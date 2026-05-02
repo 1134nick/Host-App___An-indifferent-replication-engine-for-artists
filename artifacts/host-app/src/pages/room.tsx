@@ -7,7 +7,6 @@ import {
   useRequestUploadUrl,
   useDeleteMessage,
   useGetMe,
-  getGetRoomMessagesQueryKey,
 } from "@workspace/api-client-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -297,7 +296,7 @@ export default function Room() {
   const roomId = parseInt(id || "0", 10);
 
   const { data: messages, isLoading } = useGetRoomMessages(roomId, { limit: 100 }, {
-    query: { queryKey: getGetRoomMessagesQueryKey(roomId, { limit: 100 }), refetchInterval: 3000 },
+    query: { refetchInterval: 3000 },
   });
   const { data: role } = useGetMyRole();
   const { data: me } = useGetMe();
@@ -514,26 +513,23 @@ export default function Room() {
     setIsUploading(true);
     setError(null);
     try {
-      const rawMime = mediaBlob.type || "audio/webm";
-      const baseMime = rawMime.toLowerCase().split(";")[0].trim();
-      const ext = baseMime.includes("mp4") ? "mp4" : baseMime.includes("ogg") ? "ogg" : "webm";
+      const mime = mediaBlob.type || "audio/webm";
+      const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
       const urlData = await requestUploadUrlMutation.mutateAsync({
         data: {
           name: `capture.${ext}`,
           size: mediaBlob.size,
-          contentType: rawMime,
+          contentType: mime,
         },
       });
 
       const uploadRes = await fetch(urlData.uploadURL, {
         method: "PUT",
         body: mediaBlob,
-        headers: { "Content-Type": rawMime },
+        headers: { "Content-Type": mime },
       });
 
       if (!uploadRes.ok) throw new Error("Upload failed");
-
-      const durationMs = recordingSeconds > 0 ? recordingSeconds * 1000 : undefined;
 
       await new Promise<void>((resolve, reject) => {
         sendMessageMutation.mutate(
@@ -543,9 +539,6 @@ export default function Room() {
               content: content.trim() || null,
               mediaType: "audio",
               mediaUrl: urlData.objectPath,
-              mediaMimeType: baseMime,
-              mediaDurationMs: durationMs,
-              isCapture: true,
             },
           },
           {
@@ -564,7 +557,7 @@ export default function Room() {
     } finally {
       setIsUploading(false);
     }
-  }, [content, roomId, recordingSeconds, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
+  }, [content, roomId, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
 
   const handleSendText = (e: React.FormEvent) => {
     e.preventDefault();

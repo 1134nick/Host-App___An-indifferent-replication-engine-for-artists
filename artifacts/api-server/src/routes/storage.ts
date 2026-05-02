@@ -7,8 +7,6 @@ import {
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { ObjectPermission } from "../lib/objectAcl";
 import { requireAuth } from "../lib/auth";
-import { db, messagesTable, roomMembersTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -87,32 +85,11 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
  * These are served from a separate path from /public-objects and can optionally
  * be protected with authentication or ACL checks based on the use case.
  */
-router.get("/storage/objects/*path", requireAuth, async (req: Request, res: Response) => {
+router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   try {
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join("/") : raw;
     const objectPath = `/objects/${wildcardPath}`;
-
-    // Per-object authorization: only allow access if the requester is a member
-    // of a room that contains a message referencing this object path.
-    const userId = req.session.userId!;
-    const [authorized] = await db
-      .select({ messageId: messagesTable.id })
-      .from(messagesTable)
-      .innerJoin(
-        roomMembersTable,
-        and(
-          eq(roomMembersTable.roomId, messagesTable.roomId),
-          eq(roomMembersTable.userId, userId),
-        ),
-      )
-      .where(eq(messagesTable.mediaUrl, objectPath))
-      .limit(1);
-    if (!authorized) {
-      res.status(403).json({ error: "forbidden", message: "No access to this object" });
-      return;
-    }
-
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
     const [metadata] = await objectFile.getMetadata();

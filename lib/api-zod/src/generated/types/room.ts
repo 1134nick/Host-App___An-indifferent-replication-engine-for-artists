@@ -16,5 +16,4 @@ export interface Room {
   displayName?: string | null;
   channelNumber?: number | null;
   createdByUserId?: number | null;
-  myMaskedLabel?: string | null;
 }

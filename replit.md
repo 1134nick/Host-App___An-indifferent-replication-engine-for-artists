@@ -107,7 +107,7 @@ Members can send photos, voice messages, and short videos in rooms. All identiti
 - **Captions**: optional text alongside media
 - **Delete**: users can delete their own messages via `DELETE /api/rooms/:roomId/messages/:messageId`. Only the DB row is removed — media files in object storage are intentionally preserved forever.
 - **Persistence**: messages stored indefinitely. Media files (audio/video) are never deleted from storage, even when a message is deleted.
-- **Object storage**: Replit App Storage (GCS bucket), presigned PUT URLs, served back via `/api/storage/objects/*` with Range request support. Reads require auth AND per-object authorization (caller must be a member of the room that contains a message referencing the object path).
+- **Object storage**: Replit App Storage (GCS bucket), presigned PUT URLs, served back via `/api/storage/objects/*` with Range request support
 - **Audio playback**: BlobAudioPlayer uses Web Audio API (BufferSource nodes). Per-track gain node for individual mute control.
 - **Multi-track playback**: Members can play 1, 2, 3, or ALL echoes simultaneously. Track count selector in controls bar. When max tracks is reached, the oldest playing track stops to make room. Each track plays independently — no auto-pause-others.
 - **Per-message mute**: Every media message has a mute/unmute toggle (Volume2/VolumeX icon). Muting sets gain to 0 without stopping playback. Members sculpt their own mix.
@@ -120,16 +120,6 @@ Members can send photos, voice messages, and short videos in rooms. All identiti
 - **Glitch transitions**: 600ms corrupted transition effect between echoes in continuous mode — brightness/contrast/hue-rotate/blur/skew animation during crossover.
 - **Glitch effects**: When media plays, the feed activates visual glitch effects — ambient jitter, scanline overlay, RGB split on playing messages, corrupt text effects.
 - **Echo states**: Playing messages get blue/red depth border glow, text corruption animation, and the message card flickers subtly. Images in the feed shift to luminosity blend mode during playback.
-
-## Dashboard Chat (Console)
-
-Biomechanical / Nam June Paik CRT chat surface mounted in the dashboard for the cohort general room. Three song-sharing pathways:
-
-- **Audio file upload**: mp3/wav only — client normalizes MIME (audio/mpeg or audio/wav), uploads via presigned URL, sends `mediaType: "audio"` with `mediaMimeType` and `isCapture: false`.
-- **Link sharing**: Spotify, YouTube, SoundCloud only. Either via the dedicated link composer or by typing a URL-only message into the main composer (auto-detected). Client sends `mediaType: "link"`; server derives `mediaProvider` from URL host and rejects other hosts.
-- **In-app capture**: `createCaptureRecorder()` in `audio-engine.ts` routes mic through AudioContext (MediaStreamSource → distortion → analyser → MediaStreamDestination → MediaRecorder). Sends `mediaType: "audio"` with `isCapture: true`, `mediaMimeType`, and `mediaDurationMs`.
-
-Messages render with full hyphenated masked sender label (e.g. `NEURAL·VECTOR·42`) — never truncated. New `messages` columns: `media_provider`, `media_mime_type`, `media_duration_ms`, `is_capture`.
 
 ## Member Channels
 

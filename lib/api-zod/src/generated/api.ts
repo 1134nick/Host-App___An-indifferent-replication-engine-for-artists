@@ -192,7 +192,6 @@ export const GetMyRoomsResponseItem = zod.object({
   displayName: zod.string().nullish(),
   channelNumber: zod.number().nullish(),
   createdByUserId: zod.number().nullish(),
-  myMaskedLabel: zod.string().nullish(),
 });
 export const GetMyRoomsResponse = zod.array(GetMyRoomsResponseItem);
 
@@ -201,35 +200,6 @@ export const GetMyRoomsResponse = zod.array(GetMyRoomsResponseItem);
  */
 export const CreateChannelBody = zod.object({
   name: zod.string(),
-});
-
-/**
- * @summary Get currently active members in a room
- */
-export const GetRoomPresenceParams = zod.object({
-  roomId: zod.coerce.number(),
-});
-
-export const GetRoomPresenceResponseItem = zod.object({
-  maskedLabel: zod.string(),
-  lastActiveAt: zod.date(),
-  isTyping: zod.boolean(),
-});
-export const GetRoomPresenceResponse = zod.array(GetRoomPresenceResponseItem);
-
-/**
- * @summary Mark current user as active (and optionally typing) in a room
- */
-export const SendPresenceHeartbeatParams = zod.object({
-  roomId: zod.coerce.number(),
-});
-
-export const SendPresenceHeartbeatBody = zod.object({
-  typing: zod.boolean().nullish(),
-});
-
-export const SendPresenceHeartbeatResponse = zod.object({
-  success: zod.boolean().optional(),
 });
 
 /**
@@ -254,25 +224,8 @@ export const GetRoomMessagesResponseItem = zod.object({
   content: zod.string().nullish(),
   isSystemMessage: zod.boolean(),
   maskedSenderLabel: zod.string().nullish(),
-  mediaType: zod.enum(["image", "audio", "video", "link"]).nullish(),
+  mediaType: zod.enum(["image", "audio", "video"]).nullish(),
   mediaUrl: zod.string().nullish(),
-  mediaProvider: zod.enum(["spotify", "youtube", "soundcloud"]).nullish(),
-  mediaMimeType: zod.string().nullish(),
-  mediaDurationMs: zod.number().nullish(),
-  isCapture: zod.boolean(),
-  parentMessageId: zod.number().nullish(),
-  reactions: zod
-    .array(
-      zod.object({
-        id: zod.number(),
-        messageId: zod.number(),
-        glyph: zod.string(),
-        maskedSenderLabel: zod.string().nullish(),
-        mine: zod.boolean(),
-        createdAt: zod.date(),
-      }),
-    )
-    .optional(),
   createdAt: zod.date(),
 });
 export const GetRoomMessagesResponse = zod.array(GetRoomMessagesResponseItem);
@@ -286,12 +239,8 @@ export const SendMessageParams = zod.object({
 
 export const SendMessageBody = zod.object({
   content: zod.string().nullish(),
-  mediaType: zod.enum(["image", "audio", "video", "link"]).nullish(),
+  mediaType: zod.enum(["image", "audio", "video"]).nullish(),
   mediaUrl: zod.string().nullish(),
-  mediaMimeType: zod.string().nullish(),
-  mediaDurationMs: zod.number().nullish(),
-  isCapture: zod.boolean().nullish(),
-  parentMessageId: zod.number().nullish(),
 });
 
 /**
@@ -303,31 +252,6 @@ export const DeleteMessageParams = zod.object({
 });
 
 export const DeleteMessageResponse = zod.object({
-  success: zod.boolean().optional(),
-});
-
-/**
- * @summary Add a reaction glyph to a message
- */
-export const AddMessageReactionParams = zod.object({
-  roomId: zod.coerce.number(),
-  messageId: zod.coerce.number(),
-});
-
-export const AddMessageReactionBody = zod.object({
-  glyph: zod.string(),
-});
-
-/**
- * @summary Remove the current user's reaction glyph from a message
- */
-export const RemoveMessageReactionParams = zod.object({
-  roomId: zod.coerce.number(),
-  messageId: zod.coerce.number(),
-  glyph: zod.coerce.string(),
-});
-
-export const RemoveMessageReactionResponse = zod.object({
   success: zod.boolean().optional(),
 });
 

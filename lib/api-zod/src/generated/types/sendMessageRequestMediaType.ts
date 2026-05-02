@@ -14,5 +14,4 @@ export const SendMessageRequestMediaType = {
   image: "image",
   audio: "audio",
   video: "video",
-  link: "link",
 } as const;

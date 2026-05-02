@@ -162,7 +162,6 @@ export interface Room {
   displayName?: string | null;
   channelNumber?: number | null;
   createdByUserId?: number | null;
-  myMaskedLabel?: string | null;
 }
 
 export type MessageMediaType =
@@ -173,27 +172,7 @@ export const MessageMediaType = {
   image: "image",
   audio: "audio",
   video: "video",
-  link: "link",
 } as const;
-
-export type MessageMediaProvider =
-  | (typeof MessageMediaProvider)[keyof typeof MessageMediaProvider]
-  | null;
-
-export const MessageMediaProvider = {
-  spotify: "spotify",
-  youtube: "youtube",
-  soundcloud: "soundcloud",
-} as const;
-
-export interface MessageReaction {
-  id: number;
-  messageId: number;
-  glyph: string;
-  maskedSenderLabel?: string | null;
-  mine: boolean;
-  createdAt: string;
-}
 
 export interface Message {
   id: number;
@@ -204,27 +183,7 @@ export interface Message {
   maskedSenderLabel?: string | null;
   mediaType?: MessageMediaType;
   mediaUrl?: string | null;
-  mediaProvider?: MessageMediaProvider;
-  mediaMimeType?: string | null;
-  mediaDurationMs?: number | null;
-  isCapture: boolean;
-  parentMessageId?: number | null;
-  reactions?: MessageReaction[];
   createdAt: string;
-}
-
-export interface PresenceEntry {
-  maskedLabel: string;
-  lastActiveAt: string;
-  isTyping: boolean;
-}
-
-export interface PresenceHeartbeatRequest {
-  typing?: boolean | null;
-}
-
-export interface AddReactionRequest {
-  glyph: string;
 }
 
 export type SendMessageRequestMediaType =
@@ -235,17 +194,12 @@ export const SendMessageRequestMediaType = {
   image: "image",
   audio: "audio",
   video: "video",
-  link: "link",
 } as const;
 
 export interface SendMessageRequest {
   content?: string | null;
   mediaType?: SendMessageRequestMediaType;
   mediaUrl?: string | null;
-  mediaMimeType?: string | null;
-  mediaDurationMs?: number | null;
-  isCapture?: boolean | null;
-  parentMessageId?: number | null;
 }
 
 export interface RequestUploadUrlRequest {
@@ -285,19 +239,11 @@ export interface AdminStats {
   spotsToFill: number;
 }
 
-export type SendPresenceHeartbeat200 = {
-  success?: boolean;
-};
-
 export type GetRoomMessagesParams = {
   limit?: number;
   offset?: number;
 };
 
 export type DeleteMessage200 = {
-  success?: boolean;
-};
-
-export type RemoveMessageReaction200 = {
   success?: boolean;
 };

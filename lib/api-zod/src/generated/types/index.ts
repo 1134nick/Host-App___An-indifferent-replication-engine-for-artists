@@ -6,7 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export * from "./addReactionRequest";
 export * from "./adminStats";
 export * from "./application";
 export * from "./applicationRequest";
@@ -25,21 +24,15 @@ export * from "./healthStatus";
 export * from "./instruction";
 export * from "./loginRequest";
 export * from "./message";
-export * from "./messageMediaProvider";
 export * from "./messageMediaType";
-export * from "./messageReaction";
 export * from "./messageResponse";
-export * from "./presenceEntry";
-export * from "./presenceHeartbeatRequest";
 export * from "./registerRequest";
-export * from "./removeMessageReaction200";
 export * from "./requestUploadUrlRequest";
 export * from "./requestUploadUrlResponse";
 export * from "./room";
 export * from "./roomRoomType";
 export * from "./sendMessageRequest";
 export * from "./sendMessageRequestMediaType";
-export * from "./sendPresenceHeartbeat200";
 export * from "./user";
 export * from "./userRole";
 export * from "./userRoleRoleType";
