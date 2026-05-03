@@ -598,11 +598,18 @@ export default function Room() {
   }, []);
 
   const handleDeleteMessage = useCallback((messageId: number) => {
+    if (typeof window !== "undefined" && !window.confirm("Delete this message? This cannot be undone.")) {
+      return;
+    }
+    setError(null);
     deleteMessageMutation.mutate(
       { roomId, messageId },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: [`/api/rooms/${roomId}/messages`] });
+        },
+        onError: () => {
+          setError("Could not delete message. Please try again.");
         },
       },
     );
