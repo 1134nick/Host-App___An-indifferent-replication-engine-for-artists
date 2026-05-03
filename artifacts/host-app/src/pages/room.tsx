@@ -60,6 +60,41 @@ function findFirstUrl(text: string | null | undefined): string | null {
   return m ? m[0].replace(/[),.;]+$/, "") : null;
 }
 
+function Linkified({ text, className }: { text: string; className?: string }) {
+  const tokens: Array<{ kind: "text" | "url"; value: string }> = [];
+  const re = /(https?:\/\/[^\s]+)/gi;
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > lastIndex) tokens.push({ kind: "text", value: text.slice(lastIndex, m.index) });
+    const trailing = m[0].match(/[),.;]+$/)?.[0] ?? "";
+    const cleanUrl = trailing ? m[0].slice(0, m[0].length - trailing.length) : m[0];
+    tokens.push({ kind: "url", value: cleanUrl });
+    if (trailing) tokens.push({ kind: "text", value: trailing });
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < text.length) tokens.push({ kind: "text", value: text.slice(lastIndex) });
+  return (
+    <p className={className}>
+      {tokens.map((t, i) =>
+        t.kind === "url" ? (
+          <a
+            key={i}
+            href={t.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--depth-blue,_#7aa7ff)] underline underline-offset-2 hover:text-foreground break-all"
+          >
+            {t.value}
+          </a>
+        ) : (
+          <span key={i}>{t.value}</span>
+        ),
+      )}
+    </p>
+  );
+}
+
 function LinkEmbedCard({ embed }: { embed: LinkEmbed }) {
   if (embed.provider === "spotify") {
     return (
@@ -621,8 +656,17 @@ export default function Room() {
     setError(null);
     try {
       const mime = mediaBlob.type || "audio/webm";
+      const kind: "image" | "audio" | "video" =
+        mime.startsWith("image/") ? "image"
+        : mime.startsWith("video/") ? "video"
+        : "audio";
       const ext = fileName?.split(".").pop()?.toLowerCase()
-        || (mime.includes("mp4") ? "mp4"
+        || (mime.includes("jpeg") ? "jpg"
+            : mime.includes("png") ? "png"
+            : mime.includes("webp") ? "webp"
+            : mime.includes("gif") ? "gif"
+            : mime.includes("quicktime") ? "mov"
+            : mime.includes("mp4") ? "mp4"
             : mime.includes("ogg") ? "ogg"
             : mime.includes("mpeg") || mime.includes("mp3") ? "mp3"
             : mime.includes("wav") ? "wav"
@@ -654,7 +698,7 @@ export default function Room() {
             roomId,
             data: {
               content: content.trim() || null,
-              mediaType: "audio",
+              mediaType: kind,
               mediaUrl: urlData.objectPath,
             },
           },
@@ -685,8 +729,12 @@ export default function Room() {
       setError("File too large (max 50MB).");
       return;
     }
-    if (!file.type.startsWith("audio/")) {
-      setError("Only audio files are accepted.");
+    if (
+      !file.type.startsWith("audio/") &&
+      !file.type.startsWith("image/") &&
+      !file.type.startsWith("video/")
+    ) {
+      setError("Only audio, image, or video files are accepted.");
       return;
     }
     uploadAndSend(file, file.name);
@@ -1002,13 +1050,41 @@ export default function Room() {
                   )}
                 </div>
               </div>
-              {msg.content && <p className={`whitespace-pre-wrap break-words text-foreground mb-2 ${isThisPlaying ? "corrupt-text" : ""}`}>{msg.content}</p>}
+              {msg.content && (
+                <Linkified
+                  text={msg.content}
+                  className={`whitespace-pre-wrap break-words text-foreground mb-2 ${isThisPlaying ? "corrupt-text" : ""}`}
+                />
+              )}
               {(() => {
                 const url = findFirstUrl(msg.content);
                 if (!url) return null;
                 const embed = parseEmbed(url);
                 return embed ? <LinkEmbedCard embed={embed} /> : null;
               })()}
+              {msg.mediaType === "image" && msg.mediaUrl && (
+                <a
+                  href={`/api/storage${msg.mediaUrl}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block mt-2"
+                >
+                  <img
+                    src={`/api/storage${msg.mediaUrl}`}
+                    alt="shared image"
+                    loading="lazy"
+                    className="max-w-full sm:max-w-sm max-h-80 object-contain border border-border bg-background"
+                  />
+                </a>
+              )}
+              {msg.mediaType === "video" && msg.mediaUrl && (
+                <video
+                  controls
+                  preload="metadata"
+                  src={`/api/storage${msg.mediaUrl}`}
+                  className="mt-2 w-full max-w-md max-h-80 bg-background border border-border"
+                />
+              )}
               {msg.mediaType === "audio" && msg.mediaUrl && (
                 <BlobAudioPlayer
                   src={`/api/storage${msg.mediaUrl}`}
@@ -1115,7 +1191,7 @@ export default function Room() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="audio/*"
+        accept="audio/*,image/*,video/*"
         onChange={handleFilePicked}
         className="hidden"
       />
@@ -1142,7 +1218,8 @@ export default function Room() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                title="Upload audio file"
+                title="Upload audio, image, or video"
+                aria-label="Upload audio, image, or video"
                 className="min-w-[44px] min-h-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                 disabled={isBusy}
               >
