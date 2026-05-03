@@ -182,11 +182,20 @@ export default function ConsoleChat({ roomId }: { roomId: number }) {
     setError(null);
     try {
       const mime = blob.type || "audio/webm";
+      const kind: "image" | "audio" | "video" =
+        mime.startsWith("image/") ? "image"
+        : mime.startsWith("video/") ? "video"
+        : "audio";
       const ext = fileName?.split(".").pop()?.toLowerCase()
         || (mime.includes("mp4") ? "mp4"
           : mime.includes("ogg") ? "ogg"
           : mime.includes("mpeg") || mime.includes("mp3") ? "mp3"
           : mime.includes("wav") ? "wav"
+          : mime.includes("png") ? "png"
+          : mime.includes("jpeg") || mime.includes("jpg") ? "jpg"
+          : mime.includes("gif") ? "gif"
+          : mime.includes("webp") ? "webp"
+          : mime.includes("quicktime") ? "mov"
           : "webm");
       const name = fileName || `capture.${ext}`;
       const urlData = await requestUploadUrl.mutateAsync({
@@ -207,7 +216,7 @@ export default function ConsoleChat({ roomId }: { roomId: number }) {
         roomId,
         data: {
           content: content.trim() || null,
-          mediaType: "audio",
+          mediaType: kind,
           mediaUrl: urlData.objectPath,
         },
       });
@@ -265,8 +274,12 @@ export default function ConsoleChat({ roomId }: { roomId: number }) {
       setError("file too large (max 50mb)");
       return;
     }
-    if (!file.type.startsWith("audio/")) {
-      setError("only audio files");
+    if (
+      !file.type.startsWith("audio/") &&
+      !file.type.startsWith("image/") &&
+      !file.type.startsWith("video/")
+    ) {
+      setError("only audio, image, or video");
       return;
     }
     uploadAndSend(file, file.name);
@@ -467,6 +480,29 @@ export default function ConsoleChat({ roomId }: { roomId: number }) {
                 </div>
               )}
               {embed && <EmbedTile embed={embed} />}
+              {msg.mediaType === "image" && msg.mediaUrl && (
+                <a
+                  href={`/api/storage${msg.mediaUrl}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block mt-2"
+                >
+                  <img
+                    src={`/api/storage${msg.mediaUrl}`}
+                    alt="shared image"
+                    loading="lazy"
+                    className="max-w-full max-h-48 object-contain border border-border bg-background"
+                  />
+                </a>
+              )}
+              {msg.mediaType === "video" && msg.mediaUrl && (
+                <video
+                  controls
+                  preload="metadata"
+                  src={`/api/storage${msg.mediaUrl}`}
+                  className="mt-2 w-full max-h-48 bg-background border border-border"
+                />
+              )}
               {msg.mediaType === "audio" && msg.mediaUrl && (
                 <SimpleAudio src={`/api/storage${msg.mediaUrl}`} />
               )}
@@ -568,7 +604,7 @@ export default function ConsoleChat({ roomId }: { roomId: number }) {
         <input
           ref={fileInputRef}
           type="file"
-          accept="audio/*"
+          accept="audio/*,image/*,video/*"
           onChange={handleFile}
           className="hidden"
         />
