@@ -50,20 +50,20 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="flex-1 p-6 max-w-6xl mx-auto w-full">
-      <header className="mb-12">
+    <div className="flex-1 p-4 sm:p-6 max-w-6xl mx-auto w-full overflow-x-hidden">
+      <header className="mb-8 sm:mb-12">
         <h1 className="depth-heading tracking-[0.2em] uppercase mb-4">
           Console
         </h1>
         <div className="weave-divider w-full mb-4" />
-        <div className="flex flex-wrap gap-4 text-xs font-mono uppercase tracking-widest">
+        <div className="flex flex-wrap gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono uppercase tracking-widest">
           <span className="bg-card px-3 py-1 border border-border">{role.statusLabel}</span>
           {role.teamName && <span className="bg-card px-3 py-1 border border-border">{role.teamName}</span>}
           <span className="bg-card px-3 py-1 border border-border text-muted-foreground">Cohort {role.cohortNumber}</span>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
         <div className="lg:col-span-2 space-y-6">
           <h2 className="font-mono text-xs uppercase tracking-widest text-muted-foreground mb-4">Channels</h2>
 
@@ -95,17 +95,17 @@ export default function Dashboard() {
                   {memberChannels.map((room) => (
                     <Link key={room.id} href={`/rooms/${room.id}`}>
                       <div className="group bg-card border border-border p-4 hover:border-primary/50 transition-colors cursor-pointer">
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-3">
-                            <MessageSquare className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
-                            <span className="text-xs font-mono tracking-wider uppercase">
+                        <div className="flex justify-between items-center gap-2">
+                          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-wrap">
+                            <MessageSquare className="w-3.5 h-3.5 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
+                            <span className="text-xs font-mono tracking-wider uppercase truncate">
                               {room.displayName || `Channel ${room.channelNumber}`}
                             </span>
                             <span className="text-[10px] text-muted-foreground font-mono tracking-widest">
                               {room.memberCount} present
                             </span>
                           </div>
-                          <span className="text-[10px] border border-border px-2 py-0.5 text-muted-foreground group-hover:text-foreground transition-colors font-mono">
+                          <span className="text-[10px] border border-border px-2 py-0.5 shrink-0 text-muted-foreground group-hover:text-foreground transition-colors font-mono">
                             ENTER
                           </span>
                         </div>

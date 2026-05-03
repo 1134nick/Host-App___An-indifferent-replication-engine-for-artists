@@ -10,12 +10,107 @@ import {
 } from "@workspace/api-client-react";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Mic, MicOff, X, Send, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Radio, Zap } from "lucide-react";
+import { ArrowLeft, Mic, MicOff, X, Send, Volume2, VolumeX, Play, Pause, Loader2, Trash2, Radio, Zap, Link2, Upload, ExternalLink } from "lucide-react";
 import { fetchAndDecode, createEchoNode, getAudioContext, type EchoNode } from "../lib/audio-engine";
 import Waveform from "../components/waveform";
 import AmbientDrone from "../components/ambient-drone";
 
 type PlaybackMode = "single" | "continuous";
+
+const URL_RE = /(https?:\/\/[^\s]+)/i;
+
+type LinkEmbed =
+  | { provider: "spotify"; embedUrl: string; url: string }
+  | { provider: "youtube"; embedUrl: string; url: string }
+  | { provider: "soundcloud"; embedUrl: string; url: string }
+  | { provider: "generic"; host: string; url: string };
+
+function parseEmbed(rawUrl: string): LinkEmbed | null {
+  let u: URL;
+  try { u = new URL(rawUrl); } catch { return null; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  const host = u.hostname.replace(/^www\./, "");
+  if (host === "open.spotify.com") {
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      return { provider: "spotify", url: rawUrl, embedUrl: `https://open.spotify.com/embed/${parts[0]}/${parts[1]}` };
+    }
+  }
+  if (host === "youtube.com" || host === "m.youtube.com") {
+    const v = u.searchParams.get("v");
+    if (v) return { provider: "youtube", url: rawUrl, embedUrl: `https://www.youtube.com/embed/${v}` };
+  }
+  if (host === "youtu.be") {
+    const id = u.pathname.split("/").filter(Boolean)[0];
+    if (id) return { provider: "youtube", url: rawUrl, embedUrl: `https://www.youtube.com/embed/${id}` };
+  }
+  if (host === "soundcloud.com" || host.endsWith(".soundcloud.com")) {
+    return {
+      provider: "soundcloud",
+      url: rawUrl,
+      embedUrl: `https://w.soundcloud.com/player/?url=${encodeURIComponent(rawUrl)}&color=%232850b4&auto_play=false&hide_related=true&visual=false`,
+    };
+  }
+  return { provider: "generic", url: rawUrl, host };
+}
+
+function findFirstUrl(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const m = text.match(URL_RE);
+  return m ? m[0].replace(/[),.;]+$/, "") : null;
+}
+
+function LinkEmbedCard({ embed }: { embed: LinkEmbed }) {
+  if (embed.provider === "spotify") {
+    return (
+      <iframe
+        src={embed.embedUrl}
+        className="w-full rounded mt-2 border-0"
+        style={{ height: 152, maxWidth: "100%" }}
+        loading="lazy"
+        allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
+        title="Spotify"
+      />
+    );
+  }
+  if (embed.provider === "youtube") {
+    return (
+      <div className="mt-2 relative w-full" style={{ aspectRatio: "16/9", maxWidth: 480 }}>
+        <iframe
+          src={embed.embedUrl}
+          className="absolute inset-0 w-full h-full border-0"
+          loading="lazy"
+          allow="accelerometer; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          title="YouTube"
+        />
+      </div>
+    );
+  }
+  if (embed.provider === "soundcloud") {
+    return (
+      <iframe
+        src={embed.embedUrl}
+        className="w-full mt-2 border-0"
+        style={{ height: 120, maxWidth: "100%" }}
+        loading="lazy"
+        title="SoundCloud"
+      />
+    );
+  }
+  return (
+    <a
+      href={embed.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-2 flex items-center gap-2 px-3 py-2 border border-border bg-background/50 hover:border-foreground/40 transition-colors text-xs font-mono break-all"
+    >
+      <ExternalLink className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+      <span className="text-muted-foreground uppercase tracking-widest mr-1">{embed.host}</span>
+      <span className="truncate">{embed.url}</span>
+    </a>
+  );
+}
 
 function BlobAudioPlayer({
   src,
@@ -313,7 +408,11 @@ export default function Room() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkValue, setLinkValue] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [playbackMode, setPlaybackMode] = useState<PlaybackMode>("single");
   const [activeMediaIds, setActiveMediaIds] = useState<Set<number>>(new Set());
@@ -344,7 +443,7 @@ export default function Room() {
 
   const displayMessages = useMemo(() => {
     if (!messages) return [];
-    return messages.filter((m) => !m.mediaType || m.mediaType === "audio");
+    return messages;
   }, [messages]);
 
   const mediaMessages = useMemo(() => {
@@ -509,27 +608,38 @@ export default function Room() {
     );
   }, [roomId, deleteMessageMutation, queryClient]);
 
-  const uploadAndSend = useCallback(async (mediaBlob: Blob) => {
+  const uploadAndSend = useCallback(async (mediaBlob: Blob, fileName?: string) => {
     setIsUploading(true);
+    setUploadProgress(0);
     setError(null);
     try {
       const mime = mediaBlob.type || "audio/webm";
-      const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
+      const ext = fileName?.split(".").pop()?.toLowerCase()
+        || (mime.includes("mp4") ? "mp4"
+            : mime.includes("ogg") ? "ogg"
+            : mime.includes("mpeg") || mime.includes("mp3") ? "mp3"
+            : mime.includes("wav") ? "wav"
+            : "webm");
+      const name = fileName || `capture.${ext}`;
       const urlData = await requestUploadUrlMutation.mutateAsync({
-        data: {
-          name: `capture.${ext}`,
-          size: mediaBlob.size,
-          contentType: mime,
-        },
+        data: { name, size: mediaBlob.size, contentType: mime },
       });
 
-      const uploadRes = await fetch(urlData.uploadURL, {
-        method: "PUT",
-        body: mediaBlob,
-        headers: { "Content-Type": mime },
+      // Use XHR so we can show real upload progress.
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", urlData.uploadURL);
+        xhr.setRequestHeader("Content-Type", mime);
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) setUploadProgress(Math.round((ev.loaded / ev.total) * 100));
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(`upload failed (${xhr.status})`));
+        };
+        xhr.onerror = () => reject(new Error("upload failed"));
+        xhr.send(mediaBlob);
       });
-
-      if (!uploadRes.ok) throw new Error("Upload failed");
 
       await new Promise<void>((resolve, reject) => {
         sendMessageMutation.mutate(
@@ -553,11 +663,54 @@ export default function Room() {
         );
       });
     } catch (err) {
-      setError("Transmission failed.");
+      setError(err instanceof Error && err.message ? `Transmission failed: ${err.message}` : "Transmission failed.");
     } finally {
       setIsUploading(false);
+      setUploadProgress(0);
     }
   }, [content, roomId, requestUploadUrlMutation, sendMessageMutation, queryClient, clearCaptures]);
+
+  const handleFilePicked = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.size > 50 * 1024 * 1024) {
+      setError("File too large (max 50MB).");
+      return;
+    }
+    if (!file.type.startsWith("audio/")) {
+      setError("Only audio files are accepted.");
+      return;
+    }
+    uploadAndSend(file, file.name);
+  }, [uploadAndSend]);
+
+  const handleLinkSubmit = useCallback(() => {
+    setError(null);
+    const raw = linkValue.trim();
+    if (!raw) return;
+    const normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    let valid = false;
+    try {
+      const u = new URL(normalized);
+      valid = u.protocol === "http:" || u.protocol === "https:";
+    } catch {}
+    if (!valid) {
+      setError("That doesn't look like a valid link.");
+      return;
+    }
+    sendMessageMutation.mutate(
+      { roomId, data: { content: normalized } },
+      {
+        onSuccess: () => {
+          setLinkValue("");
+          setLinkOpen(false);
+          queryClient.invalidateQueries({ queryKey: [`/api/rooms/${roomId}/messages`] });
+        },
+        onError: () => setError("Could not transmit link."),
+      },
+    );
+  }, [linkValue, sendMessageMutation, roomId, queryClient]);
 
   const handleSendText = (e: React.FormEvent) => {
     e.preventDefault();
@@ -598,8 +751,8 @@ export default function Room() {
   const isBusy = sendMessageMutation.isPending || isUploading;
 
   return (
-    <div className={`flex-1 flex flex-col max-w-5xl mx-auto w-full px-4 py-6 h-[calc(100vh-3.5rem)] ${anyPlaying ? "glitch-active" : ""}`}>
-      <header className="flex justify-between items-center mb-4 pb-3 shrink-0">
+    <div className={`flex-1 flex flex-col max-w-5xl mx-auto w-full px-3 sm:px-4 py-3 sm:py-6 h-[calc(100dvh-3.5rem)] overflow-x-hidden ${anyPlaying ? "glitch-active" : ""}`}>
+      <header className="flex justify-between items-center mb-3 sm:mb-4 pb-2 sm:pb-3 shrink-0">
         <Link href="/dashboard" className="flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="w-4 h-4" />
           Back
@@ -842,7 +995,13 @@ export default function Room() {
                   )}
                 </div>
               </div>
-              {msg.content && <p className={`whitespace-pre-wrap text-foreground mb-2 ${isThisPlaying ? "corrupt-text" : ""}`}>{msg.content}</p>}
+              {msg.content && <p className={`whitespace-pre-wrap break-words text-foreground mb-2 ${isThisPlaying ? "corrupt-text" : ""}`}>{msg.content}</p>}
+              {(() => {
+                const url = findFirstUrl(msg.content);
+                if (!url) return null;
+                const embed = parseEmbed(url);
+                return embed ? <LinkEmbedCard embed={embed} /> : null;
+              })()}
               {msg.mediaType === "audio" && msg.mediaUrl && (
                 <BlobAudioPlayer
                   src={`/api/storage${msg.mediaUrl}`}
@@ -890,51 +1049,130 @@ export default function Room() {
       )}
 
       {capturedAudio && !isRecording && (
-        <div className="shrink-0 mb-4 border border-border bg-card flex items-center gap-3 px-3 py-2">
+        <div className="shrink-0 mb-2 border border-border bg-card flex items-center gap-3 px-3 py-2">
           <span className="w-2 h-2 rounded-full shrink-0 bg-muted-foreground" />
           <span className="text-xs font-mono text-muted-foreground flex-1 lowercase">voice ready</span>
-          <button onClick={clearCaptures} className="text-muted-foreground hover:text-foreground">
+          <button onClick={clearCaptures} className="min-w-[44px] min-h-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      <div className="shrink-0 bg-card border border-border p-2">
+      {isUploading && (
+        <div className="shrink-0 mb-2 border border-border bg-card px-3 py-2">
+          <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-1">
+            <span>uploading…</span>
+            <span>{uploadProgress}%</span>
+          </div>
+          <div className="h-1 bg-background overflow-hidden">
+            <div
+              className="h-full bg-[var(--depth-blue)] transition-all"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {linkOpen && !isPeripheral && (
+        <div className="shrink-0 mb-2 border border-border bg-card flex items-center gap-2 px-2 py-2">
+          <Link2 className="w-4 h-4 shrink-0 text-muted-foreground ml-1" />
+          <input
+            type="url"
+            value={linkValue}
+            onChange={(e) => setLinkValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleLinkSubmit(); } }}
+            placeholder="paste spotify / youtube / soundcloud link…"
+            className="flex-1 min-w-0 bg-background border border-border px-3 py-2 text-xs font-mono focus:outline-none focus:border-foreground"
+            inputMode="url"
+            autoFocus
+            disabled={sendMessageMutation.isPending}
+          />
+          <button
+            type="button"
+            onClick={handleLinkSubmit}
+            disabled={!linkValue.trim() || sendMessageMutation.isPending}
+            className="min-h-[40px] px-3 border border-foreground text-foreground text-[10px] font-mono uppercase tracking-widest hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
+          >
+            Attach
+          </button>
+          <button
+            type="button"
+            onClick={() => { setLinkOpen(false); setLinkValue(""); }}
+            className="min-w-[40px] min-h-[40px] flex items-center justify-center text-muted-foreground hover:text-foreground"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*"
+        onChange={handleFilePicked}
+        className="hidden"
+      />
+
+      <div className="shrink-0 bg-card border border-border p-1.5 sm:p-2">
         {isPeripheral ? (
           <div className="p-4 text-center text-xs uppercase tracking-widest text-muted-foreground opacity-40 lowercase">
             observation only
           </div>
         ) : (
-          <form onSubmit={handleSendText} className="flex gap-2 items-center">
+          <form onSubmit={handleSendText} className="flex gap-1 sm:gap-2 items-center">
             {!hasPending && (
               <button
                 type="button"
                 onClick={isRecording && mediaMode === "recording" ? stopRecording : startRecording}
                 title={isRecording && mediaMode === "recording" ? "Stop recording" : "Record voice"}
-                className={`p-2 transition-colors ${isRecording && mediaMode === "recording" ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
+                className={`min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors ${isRecording && mediaMode === "recording" ? "text-red-400" : "text-muted-foreground hover:text-foreground"}`}
+                disabled={isBusy}
               >
                 {isRecording && mediaMode === "recording" ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              </button>
+            )}
+            {!hasPending && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload audio file"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                disabled={isBusy}
+              >
+                <Upload className="w-5 h-5" />
+              </button>
+            )}
+            {!hasPending && (
+              <button
+                type="button"
+                onClick={() => setLinkOpen((v) => !v)}
+                title="Share a link"
+                className={`min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors ${linkOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                disabled={isBusy}
+              >
+                <Link2 className="w-5 h-5" />
               </button>
             )}
             <input
               type="text"
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder={hasPending ? "caption (optional)..." : "speak..."}
-              className="flex-1 bg-background border-none px-4 py-3 focus:outline-none font-mono text-sm"
+              placeholder={hasPending ? "caption (optional)…" : "speak…"}
+              className="flex-1 min-w-0 bg-background border-none px-3 py-3 focus:outline-none font-mono text-sm"
               disabled={isBusy}
             />
             <button
               type="submit"
               disabled={(!content.trim() && !hasPending) || isBusy}
-              className="flex items-center gap-2 px-5 py-3 border border-foreground text-foreground font-medium tracking-widest text-xs uppercase hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
+              aria-label="Send"
+              className="flex items-center gap-2 min-h-[44px] px-3 sm:px-5 py-2 border border-foreground text-foreground font-medium tracking-widest text-xs uppercase hover:bg-foreground hover:text-background transition-colors disabled:opacity-30"
             >
               {isBusy ? (
                 <span className="animate-pulse">...</span>
               ) : (
                 <>
                   <Send className="w-3.5 h-3.5" />
-                  Send
+                  <span className="hidden sm:inline">Send</span>
                 </>
               )}
             </button>
